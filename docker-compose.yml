@@ -1,25 +1,43 @@
 version: "3.9"
 
 services:
+
+  # ── YOLO Detection Service ────────────────────────────────────
+  yolo-service:
+    build: ./yolo-service
+    container_name: firewatch-yolo
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    # GPU support (optional - remove deploy block if no NVIDIA GPU)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # ── VLM (Moondream) Service ───────────────────────────────────
+  vlm-service:
+    build: ./vlm-service
+    container_name: firewatch-vlm
+    restart: unless-stopped
+    ports:
+      - "8019:8019"
+    # Ollama needs more memory; moondream is ~1.7GB
+    shm_size: '2gb'
+
+  # ── Streamlit Frontend ────────────────────────────────────────
   frontend:
     build: ./frontend
+    container_name: firewatch-frontend
+    restart: unless-stopped
     ports:
       - "3000:3000"
     depends_on:
-      - api
-
-  api:
-    build: ./api-gateway
-    ports:
-      - "8000:8000"
-    depends_on:
-      - yolo
-      - vlm
-
-  yolo:
-    build: ./yolo-service
-    restart: unless-stopped
-
-  vlm:
-    build: ./vlm-service
-    restart: unless-stopped
+      - yolo-service
+      - vlm-service
+    environment:
+      - YOLO_SERVICE_URL=http://yolo-service:8000
+      - VLM_SERVICE_URL=http://vlm-service:8019
