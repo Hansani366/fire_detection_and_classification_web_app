@@ -127,3 +127,20 @@ The system triggers the alarm if VLM output contains any of:
 - First startup of VLM service will pull the Moondream model (~1.7GB) — takes a few minutes
 - For GPU acceleration, uncomment the `deploy` block in `docker-compose.yml`
 - The VLM service requires `shm_size: 2gb` for Ollama model loading
+
+# Supportive Repos Used When Writing This Framework
+
+- https://github.com/Hansani366/streamlit_fastapi_webapp
+- https://github.com/Hansani366/yolo_vlm_webapp
+- https://github.com/Hansani366/vlm_or_mmllm_visual_reasoning
+
+# Time Taken to Build with VLM only mode
+
+| Stage                 | Approx. Time |
+|-----------------------|--------------|
+| YOLO Dependencies     | ~35 min      |
+| Ollama Setup          | ~22 min      |
+| Frontend Dependencies | ~5 min       |
+| System Packages       | ~2–4 min     |
+| **Total (First Build)** | **~40–45 min** |
+| Subsequent Builds     | 1–5 min      |

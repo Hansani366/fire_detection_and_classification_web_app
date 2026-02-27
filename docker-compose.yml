@@ -1,5 +1,12 @@
 version: "3.9"
 
+# ┌─────────────────────────────────────────────────────────────────┐
+# │  VLM BACKEND SWITCH                                             │
+# │  Change VLM_BACKEND below to swap between backends:            │
+# │    gemini    → uses Gemini 2.5 Flash via Google API (fast)     │
+# │    moondream → uses Moondream via local Ollama (private/offline)│
+# └─────────────────────────────────────────────────────────────────┘
+
 services:
 
   # ── YOLO Detection Service ────────────────────────────────────
@@ -9,7 +16,7 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
-    # GPU support (optional - remove deploy block if no NVIDIA GPU)
+    # GPU support (optional - uncomment if you have an NVIDIA GPU)
     # deploy:
     #   resources:
     #     reservations:
@@ -18,15 +25,27 @@ services:
     #           count: 1
     #           capabilities: [gpu]
 
-  # ── VLM (Moondream) Service ───────────────────────────────────
+  # ── VLM Service ───────────────────────────────────────────────
   vlm-service:
-    build: ./vlm-service
+    build:
+      context: ./vlm-service
+      args:
+        - VLM_BACKEND=gemini   # ← CHANGE HERE to switch (gemini | moondream)
     container_name: firewatch-vlm
     restart: unless-stopped
     ports:
       - "8019:8019"
-    # Ollama needs more memory; moondream is ~1.7GB
     shm_size: '2gb'
+    environment:
+      # ▼▼▼ MUST MATCH the build arg above ▼▼▼
+      - VLM_BACKEND=gemini     # options: gemini | moondream
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+      # Required only when VLM_BACKEND=gemini (ignored for moondream)
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+
+      # Required only when VLM_BACKEND=moondream (ignored for gemini)
+      - OLLAMA_URL=http://localhost:11434
 
   # ── Streamlit Frontend ────────────────────────────────────────
   frontend:
