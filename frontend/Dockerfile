@@ -5,15 +5,16 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
+COPY . .
 
 EXPOSE 3000
 
-CMD ["streamlit", "run", "app.py", \
-     "--server.port=3000", \
-     "--server.address=0.0.0.0", \
-     "--server.headless=true", \
+CMD ["streamlit", "run", "app.py",\
+     "--server.port=3000",\
+     "--server.address=0.0.0.0",\
+     "--server.headless=true",\
      "--browser.gatherUsageStats=false"]

@@ -3,6 +3,8 @@ import requests
 import time
 import threading
 import queue
+import base64
+from pathlib import Path
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
 import av
 import numpy as np
@@ -193,6 +195,7 @@ div[data-testid="column"] { padding: 0 6px; }
 # ── Session state ────────────────────────────────────────────────────────────
 for key, default in [
     ("fire_alarm", False),
+    ("alarm_sound_playing", False),
     ("gemini_log", []),
     ("total_detections", 0),
     ("gemini_calls", 0),
@@ -201,28 +204,23 @@ for key, default in [
     if key not in st.session_state:
         st.session_state[key] = default
 
+# How many consecutive empty YOLO results must arrive before we clear the alarm.
+# Protects against single-frame misses while still being responsive.
+
+# How many consecutive VLM "detected=False" results must arrive before the alarm
+# clears. Prevents a single VLM miss on a real fire from killing the alarm, while
+# still turning it off quickly once the flame is genuinely gone (3 × ~0.5s ≈ 1.5s).
+
 YOLO_URL = "http://yolo-service:8000/detect"
 GEMINI_URL = "http://vlm-service:8019/describe-image/"
-FIRE_KEYWORDS = {
-    "fire",
-    "smoke",
-    "flame",
-    "flames",
-    "burning",
-    "blaze",
-    "wildfire",
-    "inferno",
-    "ember",
-    "combustion",
-}
+# Fire/smoke detection is now handled entirely by the VLM service (vlm_service.py).
 
 
 # ── Video processor ──────────────────────────────────────────────────────────
 class FireDetector(VideoProcessorBase):
     def __init__(self):
-        # Latest detections shared between recv() thread and Streamlit thread
         self._lock = threading.Lock()
-        self._detections = []  # list of det dicts from YOLO
+        self._detections = []
         self.result_queue = queue.Queue(maxsize=2)
         self._last_send = 0
 
@@ -230,36 +228,26 @@ class FireDetector(VideoProcessorBase):
         img = frame.to_ndarray(format="bgr24")
         now = time.time()
 
-        # Send to YOLO every 500 ms (non-blocking background thread)
         if now - self._last_send > 0.5:
             self._last_send = now
             threading.Thread(
                 target=self._call_yolo, args=(img.copy(),), daemon=True
             ).start()
 
-        # Draw latest bounding boxes directly onto the frame
         with self._lock:
             dets = list(self._detections)
 
         for det in dets:
             x1, y1, x2, y2 = [int(v) for v in det["box"]]
             label = f"{det['label']} {det['confidence']*100:.0f}%"
-            # Box
             cv2.rectangle(img, (x1, y1), (x2, y2), (50, 100, 255), 2)
-            # Label background
             (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
             cv2.rectangle(
                 img, (x1, y1 - th - 10), (x1 + tw + 6, y1), (50, 100, 255), -1
             )
-            # Label text
             cv2.putText(
-                img,
-                label,
-                (x1 + 3, y1 - 5),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (255, 255, 255),
-                2,
+                img, label, (x1 + 3, y1 - 5),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2,
             )
 
         return av.VideoFrame.from_ndarray(img, format="bgr24")
@@ -274,12 +262,13 @@ class FireDetector(VideoProcessorBase):
             )
             if resp.status_code == 200:
                 dets = [
-                    d
-                    for d in resp.json().get("detections", [])
+                    d for d in resp.json().get("detections", [])
                     if d["confidence"] >= 0.5
                 ]
                 with self._lock:
                     self._detections = dets
+                # Always push so the main loop can clear the alarm on empty results,
+                # but only draw bounding boxes when dets is non-empty.
                 if not self.result_queue.full():
                     self.result_queue.put({"detections": dets, "image": img})
         except Exception:
@@ -300,6 +289,7 @@ st.markdown(
 )
 
 alarm_ph = st.empty()
+audio_ph = st.empty()  # hidden audio lives here — injected once, cleared on reset
 
 col_cam, col_info = st.columns([3, 2], gap="medium")
 
@@ -339,6 +329,7 @@ with col_info:
 
     if st.button("⟳  RESET ALARM"):
         st.session_state.fire_alarm = False
+        st.session_state.alarm_sound_playing = False
         st.session_state.gemini_log = []
         st.session_state.total_detections = 0
         st.session_state.gemini_calls = 0
@@ -346,7 +337,7 @@ with col_info:
 
 
 # ── Render helpers ───────────────────────────────────────────────────────────
-def render_alarm(active):
+def render_alarm(active: bool):
     if active:
         alarm_ph.markdown(
             '<div class="alarm-on">🚨 &nbsp; FIRE ALARM ACTIVE &nbsp; 🚨</div>',
@@ -359,13 +350,43 @@ def render_alarm(active):
         )
 
 
+def render_audio_alarm(active: bool):
+    """
+    Inject <audio autoplay loop> exactly once when the alarm first fires.
+    Clearing the placeholder removes the element from the DOM, stopping playback.
+    """
+    if active and not st.session_state.alarm_sound_playing:
+        audio_file = Path(__file__).parent / "fire_alarm.mp3"
+        if audio_file.exists():
+            b64 = base64.b64encode(audio_file.read_bytes()).decode()
+            audio_ph.markdown(
+                f'<audio autoplay loop style="display:none">'
+                f'<source src="data:audio/mpeg;base64,{b64}" type="audio/mpeg">'
+                f'</audio>',
+                unsafe_allow_html=True,
+            )
+            st.session_state.alarm_sound_playing = True
+    elif not active:
+        audio_ph.empty()                               # removes element → stops sound
+        st.session_state.alarm_sound_playing = False
+
+
 def render_stats():
     stat_ph.markdown(
         f"""
     <div class="stat-row">
-      <div class="stat-box"><div class="stat-value">{st.session_state.total_detections}</div><div class="stat-label">Detections</div></div>
-      <div class="stat-box"><div class="stat-value">{st.session_state.gemini_calls}</div><div class="stat-label">Gemini Calls</div></div>
-      <div class="stat-box"><div class="stat-value">{'🔴' if st.session_state.fire_alarm else '🟢'}</div><div class="stat-label">Alarm</div></div>
+      <div class="stat-box">
+        <div class="stat-value">{st.session_state.total_detections}</div>
+        <div class="stat-label">Detections</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value">{st.session_state.gemini_calls}</div>
+        <div class="stat-label">Gemini Calls</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value">{'🔴' if st.session_state.fire_alarm else '🟢'}</div>
+        <div class="stat-label">Alarm</div>
+      </div>
     </div>""",
         unsafe_allow_html=True,
     )
@@ -374,7 +395,8 @@ def render_stats():
 def render_detections(dets):
     if not dets:
         det_ph.markdown(
-            "<span style=\"color:#333;font-size:0.85rem;font-family:'Share Tech Mono',monospace\">No threats detected</span>",
+            "<span style=\"color:#333;font-size:0.85rem;font-family:'Share Tech Mono',monospace\">"
+            "No threats detected</span>",
             unsafe_allow_html=True,
         )
     else:
@@ -394,11 +416,21 @@ def render_gemini_log():
         return
     entries = ""
     for entry in reversed(st.session_state.gemini_log[-10:]):
-        entries += f'<div class="vlm-entry"><span class="vlm-timestamp">[{entry["time"]}]</span>{entry["text"]}</div>'
+        entries += (
+            f'<div class="vlm-entry">'
+            f'<span class="vlm-timestamp">[{entry["time"]}]</span>'
+            f'{entry["text"]}</div>'
+        )
     gemini_ph.markdown(f'<div class="vlm-log">{entries}</div>', unsafe_allow_html=True)
 
 
-def call_gemini(img: np.ndarray) -> str:
+def call_gemini(img: np.ndarray) -> dict | None:
+    """
+    Calls the VLM service and returns a dict:
+        {"detected": bool, "type": str|None, "description": str}
+    Returns None on any network/HTTP failure so callers can distinguish
+    a service error from a genuine no-detection response.
+    """
     _, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
     try:
         resp = requests.post(
@@ -407,14 +439,43 @@ def call_gemini(img: np.ndarray) -> str:
             timeout=15,
         )
         if resp.status_code == 200:
-            return resp.json().get("description", "")
+            return resp.json()          # {"detected": bool, "type": ..., "description": ...}
     except Exception as e:
-        return f"[Gemini error: {e}]"
-    return ""
+        ts = time.strftime("%H:%M:%S")
+        st.session_state.gemini_log.append({"time": ts, "text": f"[vlm error: {e}]"})
+    return None
+
+
+def update_alarm_state(dets: list, vlm_result: dict | None):
+    """
+    VLM is the SOLE authority for the alarm.
+
+    ON  → YOLO has detections AND vlm_result["detected"] is True.
+    OFF → anything else:
+            • YOLO has no detections
+            • VLM returned detected=False (not fire/smoke)
+            • VLM call failed (vlm_result=None) — treated as no-confirmation
+
+    YOLO alone NEVER triggers the alarm.
+    No free-text keyword scanning — we trust the VLM's explicit detected flag.
+    """
+    vlm_confirms_fire = (
+        bool(dets)
+        and vlm_result is not None
+        and vlm_result.get("detected") is True
+    )
+
+    if vlm_confirms_fire:
+        st.session_state.fire_alarm = True
+    else:
+        # Turn off unconditionally — no confirmed detection = no alarm, period
+        st.session_state.fire_alarm = False
+        st.session_state.alarm_sound_playing = False
 
 
 # ── Main loop ────────────────────────────────────────────────────────────────
 render_alarm(st.session_state.fire_alarm)
+render_audio_alarm(st.session_state.fire_alarm)
 render_stats()
 render_detections(st.session_state.last_detections)
 render_gemini_log()
@@ -426,6 +487,7 @@ if ctx and ctx.video_processor:
             result = proc.result_queue.get(timeout=1.0)
         except queue.Empty:
             render_alarm(st.session_state.fire_alarm)
+            render_audio_alarm(st.session_state.fire_alarm)
             render_stats()
             render_detections(st.session_state.last_detections)
             render_gemini_log()
@@ -435,21 +497,38 @@ if ctx and ctx.video_processor:
         img = result["image"]
 
         if dets:
+            # YOLO saw something — reset the YOLO-empty counter, call VLM
             st.session_state.total_detections += len(dets)
             st.session_state.last_detections = dets
-
             st.session_state.gemini_calls += 1
-            description = call_gemini(img)
 
-            ts = time.strftime("%H:%M:%S")
-            st.session_state.gemini_log.append({"time": ts, "text": description})
+            vlm_result = call_gemini(img)  # dict on success, None on failure
 
-            if any(kw in description.lower() for kw in FIRE_KEYWORDS):
-                st.session_state.fire_alarm = True
+            if vlm_result is not None:
+                log_text = (
+                    vlm_result["description"]
+                    if vlm_result.get("detected")
+                    else f"[no fire/smoke — {vlm_result.get('type')}]"
+                )
+                st.session_state.gemini_log.append(
+                    {"time": time.strftime("%H:%M:%S"), "text": log_text}
+                )
+
+                # VLM result is definitive — fire or no fire, act immediately
+                update_alarm_state(dets, vlm_result)
+            else:
+                # VLM call failed — treat as no-detection, turn off immediately
+                update_alarm_state([], None)
+
         else:
+            # YOLO sees nothing — turn alarm off immediately and clear display
             st.session_state.last_detections = []
+            st.session_state.fire_alarm = False
+            st.session_state.alarm_sound_playing = False
+
 
         render_alarm(st.session_state.fire_alarm)
+        render_audio_alarm(st.session_state.fire_alarm)
         render_stats()
         render_detections(st.session_state.last_detections)
         render_gemini_log()
@@ -457,6 +536,7 @@ else:
     while True:
         time.sleep(1)
         render_alarm(st.session_state.fire_alarm)
+        render_audio_alarm(st.session_state.fire_alarm)
         render_stats()
         render_detections(st.session_state.last_detections)
         render_gemini_log()

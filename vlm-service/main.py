@@ -1,4 +1,5 @@
 import os
+import json
 import base64
 import logging
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -30,10 +31,27 @@ llm = ChatGoogleGenerativeAI(
 )
 logger.info("VLM LLM initialised.")
 
-FIRE_PROMPT = (
-    "Describe what you see in this image in detail. "
-    "Focus especially on any fire, smoke, flames, burning objects, or signs of combustion."
-)
+# Structured prompt — forces a JSON answer so the keyword check in app.py
+# only ever fires on an explicit positive detection, never on incidental
+# scene description language.
+FIRE_PROMPT = """You are a fire and smoke detection assistant.
+
+Carefully examine this image for any of the following:
+- visible fire or flames (open flame, candle flame, burning material)
+- smoke (any colour)
+- burning or charred objects
+- embers or glowing combustion
+
+Respond ONLY with a single JSON object — no markdown, no extra text:
+
+If fire/smoke IS detected:
+{"detected": true, "type": "<one of: fire, smoke, both>", "description": "<one concise sentence about what you see>"}
+
+If fire/smoke is NOT detected:
+{"detected": false, "type": null, "description": null}
+
+Important: a bright light, camera flash, torch, LED, or phone screen is NOT fire.
+Only mark detected=true for actual combustion."""
 
 
 @app.get("/health")
@@ -52,7 +70,33 @@ async def describe_image(file: UploadFile = File(...)):
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
         ])
         response = llm.invoke([msg])
-        return {"description": response.content.strip()}
+        raw = response.content.strip()
+
+        # Strip accidental markdown code fences if the model adds them
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip()
+
+        parsed = json.loads(raw)
+
+        if parsed.get("detected"):
+            # Only return fire-related keywords when detection is positive.
+            # The description is a single sentence written by the model — it will
+            # naturally contain words like "fire" or "smoke" only when appropriate.
+            description = parsed["description"]
+        else:
+            # Explicitly return empty string so app.py keyword check always fails.
+            description = ""
+
+        logger.info("VLM result: detected=%s type=%s", parsed.get("detected"), parsed.get("type"))
+        return {"description": description, "detected": parsed.get("detected"), "type": parsed.get("type")}
+
+    except json.JSONDecodeError as e:
+        # Model didn't return valid JSON — treat as no detection to avoid false alarms
+        logger.warning("VLM returned non-JSON response: %s | error: %s", response.content[:200], e)
+        return {"description": "", "detected": False, "type": None}
 
     except Exception:
         logger.exception("VLM inference failed")
