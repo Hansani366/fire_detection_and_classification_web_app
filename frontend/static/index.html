@@ -577,8 +577,18 @@ const offCtx    = offscreen.getContext('2d');
 function syncSize() {
   const vw = video.videoWidth  || 640;
   const vh = video.videoHeight || 480;
+
+  // Internal resolution must match what we send to YOLO
   canvas.width  = offscreen.width  = vw;
   canvas.height = offscreen.height = vh;
+
+  // CSS size must match the video's rendered size so the canvas overlay
+  // sits pixel-perfectly over the video display (handles object-fit scaling)
+  const rect = video.getBoundingClientRect();
+  if (rect.width > 0) {
+    canvas.style.width  = rect.width  + 'px';
+    canvas.style.height = rect.height + 'px';
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -735,33 +745,59 @@ async function runDetection() {
 function setAlarm(dets, vlm) {
   const confirmed = dets.length > 0 && vlm !== null && vlm.detected === true;
   S.fireAlarm = confirmed;
-  if (!confirmed) S.alarmAudioActive = false;
+  if (!confirmed) {
+    // Immediately stop audio here — don't wait for renderAudio
+    alarmAudio.pause();
+    alarmAudio.currentTime = 0;
+    S.alarmAudioActive = false;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════
    BOUNDING BOXES
 ═══════════════════════════════════════════════════════════ */
 function drawBoxes(dets) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Canvas internal resolution = video native resolution (set in syncSize)
+  // Canvas CSS display size = whatever the element renders at on screen
+  // We must draw in canvas-pixel space, which equals video-pixel space — correct.
+  // BUT the canvas CSS width/height must also be set so it doesn't stretch.
+  // We handle this by keeping canvas width/height = videoWidth/videoHeight
+  // and letting CSS object-fit handle the video. The canvas sits on top with
+  // width:100% height:100% — so we need to scale our draw coords to match
+  // the canvas's *internal* resolution, which already equals video resolution.
+  // No extra scaling needed as long as syncSize() keeps them in sync.
 
-  // Scale: YOLO coords are in video-pixel space; canvas matches video resolution
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!dets.length) return;
+
+  // YOLO returns coords relative to the image it received (offscreen canvas),
+  // which is the same size as the video. Canvas internal size matches too.
+  // So coords are already in the right space — just draw them directly.
   for (const d of dets) {
     const [x1, y1, x2, y2] = d.box;
     const w = x2 - x1, h = y2 - y1;
     const label = `${d.label} ${(d.confidence * 100).toFixed(0)}%`;
 
+    // Glow effect
+    ctx.shadowColor = '#ff4b2b';
+    ctx.shadowBlur = 12;
+
     // Box
-    ctx.strokeStyle = '#3264ff';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#ff4b2b';
+    ctx.lineWidth = 2.5;
     ctx.strokeRect(x1, y1, w, h);
 
-    // Label pill
+    ctx.shadowBlur = 0;
+
+    // Label background
     ctx.font = 'bold 13px "Share Tech Mono", monospace';
     const tw = ctx.measureText(label).width;
-    ctx.fillStyle = '#3264ffcc';
-    ctx.fillRect(x1, y1 - 22, tw + 10, 20);
+    ctx.fillStyle = '#ff4b2bdd';
+    ctx.fillRect(x1, y1 - 24, tw + 12, 22);
+
+    // Label text
     ctx.fillStyle = '#fff';
-    ctx.fillText(label, x1 + 5, y1 - 7);
+    ctx.fillText(label, x1 + 6, y1 - 7);
   }
 }
 
@@ -787,12 +823,17 @@ function renderBanner() {
 }
 
 function renderAudio() {
-  if (S.fireAlarm && !S.alarmAudioActive) {
-    alarmAudio.play().catch(() => {});   // may be blocked before first user gesture
-    S.alarmAudioActive = true;
-  } else if (!S.fireAlarm && S.alarmAudioActive) {
-    alarmAudio.pause();
-    alarmAudio.currentTime = 0;
+  if (S.fireAlarm) {
+    if (!S.alarmAudioActive) {
+      alarmAudio.play().catch(() => {});
+      S.alarmAudioActive = true;
+    }
+  } else {
+    // Always pause when alarm is off — covers all code paths
+    if (!alarmAudio.paused) {
+      alarmAudio.pause();
+      alarmAudio.currentTime = 0;
+    }
     S.alarmAudioActive = false;
   }
 }
@@ -878,6 +919,11 @@ btnReset.addEventListener('click', () => {
 /* ═══════════════════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════════════════ */
+// Re-sync canvas CSS size on window resize so boxes stay aligned
+window.addEventListener('resize', () => {
+  if (stream) syncSize();
+});
+
 render();
 </script>
 </body>
