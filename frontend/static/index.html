@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FireWatch AI 🔥</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600;700&display=swap" rel="stylesheet" />
+<style>
+/* ═══════════════════════════════════════════════════════════
+   RESET & TOKENS
+═══════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --fire:       #ff4b2b;
+  --fire-hot:   #ff1a00;
+  --bg:         #0a0a0f;
+  --card:       #111118;
+  --border:     #1f1f2e;
+  --border-dim: #1a1a28;
+  --text:       #e0e0e0;
+  --muted:      #555;
+  --log-blue:   #a0c0ff;
+  --mono: 'Share Tech Mono', monospace;
+  --sans: 'Rajdhani', sans-serif;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   BASE
+═══════════════════════════════════════════════════════════ */
+html, body {
+  background: var(--bg);
+  background: radial-gradient(ellipse at 20% 0%, #1c0900 0%, #0a0a0f 55%);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LAYOUT
+═══════════════════════════════════════════════════════════ */
+.wrapper {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px 20px 48px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HEADER
+═══════════════════════════════════════════════════════════ */
+.fw-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #ff4b2b33;
+  margin-bottom: 22px;
+}
+.fw-logo {
+  font-family: var(--mono);
+  font-size: 2.4rem;
+  color: var(--fire);
+  letter-spacing: -1px;
+  text-shadow: 0 0 32px #ff4b2b88;
+  line-height: 1;
+}
+.fw-subtitle {
+  font-size: 0.78rem;
+  color: var(--muted);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-top: 6px;
+}
+.fw-version {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: #2a2a3a;
+  letter-spacing: 2px;
+  align-self: center;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ALARM BANNER
+═══════════════════════════════════════════════════════════ */
+#alarm-banner {
+  border-radius: 8px;
+  padding: 16px 24px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  letter-spacing: 4px;
+  font-weight: bold;
+  margin-bottom: 20px;
+  transition: color .3s;
+  user-select: none;
+}
+#alarm-banner.nominal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: #2a2a3a;
+}
+#alarm-banner.active {
+  background: linear-gradient(90deg, var(--fire-hot), var(--fire), var(--fire-hot));
+  background-size: 200% 100%;
+  animation: alarm-slide 1s linear infinite, alarm-glow .5s ease-in-out infinite alternate;
+  color: #fff;
+  border: none;
+}
+@keyframes alarm-slide {
+  to { background-position: 200% 50%; }
+}
+@keyframes alarm-glow {
+  from { box-shadow: 0 0 40px #ff1a0088, 0 0 80px #ff1a0044; }
+  to   { box-shadow: 0 0 60px #ff1a00cc, 0 0 130px #ff1a0077; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN GRID
+═══════════════════════════════════════════════════════════ */
+.main-grid {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .main-grid { grid-template-columns: 1fr; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CARDS
+═══════════════════════════════════════════════════════════ */
+.fw-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+.fw-card + .fw-card { margin-top: 12px; }
+
+.card-title {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--fire);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-title::before {
+  content: '';
+  width: 6px; height: 6px;
+  background: var(--fire);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--fire);
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CAMERA
+═══════════════════════════════════════════════════════════ */
+.cam-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16/9;
+  background: #06060d;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* scanline texture */
+.cam-wrap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0,0,0,.08) 3px,
+    rgba(0,0,0,.08) 4px
+  );
+  pointer-events: none;
+  z-index: 3;
+}
+
+#preview-video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+#overlay-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* HUD corner brackets */
+.hud-corner {
+  position: absolute;
+  width: 22px; height: 22px;
+  border-color: var(--fire);
+  border-style: solid;
+  opacity: .55;
+  z-index: 4;
+}
+.hud-tl { top:8px;    left:8px;    border-width: 2px 0 0 2px; }
+.hud-tr { top:8px;    right:8px;   border-width: 2px 2px 0 0; }
+.hud-bl { bottom:8px; left:8px;    border-width: 0 0 2px 2px; }
+.hud-br { bottom:8px; right:8px;   border-width: 0 2px 2px 0; }
+
+/* Recording dot */
+#rec-dot {
+  position: absolute;
+  top: 10px; left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: #ff4b2bcc;
+  letter-spacing: 2px;
+  z-index: 5;
+}
+#rec-dot.visible { display: flex; }
+.rec-blink {
+  width: 7px; height: 7px;
+  background: var(--fire);
+  border-radius: 50%;
+  animation: blink .9s step-start infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* Placeholder when camera is off */
+#cam-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #2a2a3a;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  letter-spacing: 2px;
+  z-index: 1;
+}
+#cam-placeholder .ph-icon { font-size: 2.8rem; opacity: .4; }
+#cam-placeholder .ph-hint { font-size: 0.65rem; color: #1c1c28; }
+
+/* ═══════════════════════════════════════════════════════════
+   CONTROLS
+═══════════════════════════════════════════════════════════ */
+.cam-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+button {
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  letter-spacing: 2px;
+  border: none;
+  border-radius: 6px;
+  padding: 9px 18px;
+  cursor: pointer;
+  transition: background .18s, box-shadow .18s, opacity .18s;
+}
+.btn-primary {
+  background: var(--fire);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--fire-hot);
+  box-shadow: 0 0 20px #ff4b2b55;
+}
+.btn-secondary {
+  background: #17171f;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: #1e1e2a;
+  color: #888;
+}
+button:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   STATS ROW
+═══════════════════════════════════════════════════════════ */
+.stat-row { display: flex; gap: 10px; }
+.stat-box {
+  flex: 1;
+  background: #0d0d14;
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  padding: 12px 8px;
+  text-align: center;
+}
+.stat-val {
+  font-family: var(--mono);
+  font-size: 1.55rem;
+  color: var(--fire);
+  line-height: 1;
+}
+.stat-lbl {
+  font-size: 0.65rem;
+  color: var(--muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-top: 5px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DETECTION BADGES
+═══════════════════════════════════════════════════════════ */
+#det-container { min-height: 34px; }
+.det-badge {
+  display: inline-block;
+  background: #ff4b2b1a;
+  border: 1px solid #ff4b2b44;
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: #ff8060;
+  margin: 3px;
+}
+.no-threat {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: #2a2a3a;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   VLM LOG
+═══════════════════════════════════════════════════════════ */
+#vlm-log {
+  background: #0d0d14;
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--log-blue);
+  line-height: 1.75;
+  max-height: 300px;
+  overflow-y: auto;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+#vlm-log::-webkit-scrollbar { width: 4px; }
+#vlm-log::-webkit-scrollbar-thumb { background: #ff4b2b33; border-radius: 2px; }
+
+.log-entry { padding-bottom: 9px; margin-bottom: 9px; border-bottom: 1px solid var(--border-dim); }
+.log-entry:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.log-ts { color: #ff4b2b88; margin-right: 8px; }
+.log-empty { color: #252535; }
+
+/* ═══════════════════════════════════════════════════════════
+   SERVICE STATUS PILLS
+═══════════════════════════════════════════════════════════ */
+.svc-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.svc-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: #0d0d14;
+  border: 1px solid var(--border-dim);
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.svc-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.svc-dot.ok  { background: #22cc88; box-shadow: 0 0 6px #22cc8866; }
+.svc-dot.err { background: var(--fire); box-shadow: 0 0 6px #ff4b2b66; animation: blink .9s step-start infinite; }
+.svc-dot.idle { background: #333; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- ── Header ── -->
+  <div class="fw-header">
+    <div>
+      <div class="fw-logo">🔥 FIREWATCH</div>
+      <div class="fw-subtitle">AI-Powered Smoke &amp; Fire Detection System</div>
+    </div>
+    <div class="fw-version">v2.0 · HTML/JS</div>
+  </div>
+
+  <!-- ── Alarm banner ── -->
+  <div id="alarm-banner" class="nominal">● &nbsp; SYSTEM NOMINAL</div>
+
+  <!-- Hidden audio – loaded lazily, played via JS -->
+  <audio id="alarm-audio" loop preload="none">
+    <source src="/fire_alarm.mp3" type="audio/mpeg" />
+  </audio>
+
+  <!-- ── Main grid ── -->
+  <div class="main-grid">
+
+    <!-- ── Camera card ── -->
+    <div class="fw-card">
+      <div class="card-title">Live Camera Feed</div>
+
+      <div class="cam-wrap" id="cam-wrap">
+        <!-- Video element -->
+        <video id="preview-video" autoplay muted playsinline></video>
+
+        <!-- Canvas for bounding-box overlay -->
+        <canvas id="overlay-canvas"></canvas>
+
+        <!-- HUD corners -->
+        <div class="hud-corner hud-tl"></div>
+        <div class="hud-corner hud-tr"></div>
+        <div class="hud-corner hud-bl"></div>
+        <div class="hud-corner hud-br"></div>
+
+        <!-- Recording indicator -->
+        <div id="rec-dot">
+          <span class="rec-blink"></span>REC
+        </div>
+
+        <!-- Offline placeholder -->
+        <div id="cam-placeholder">
+          <div class="ph-icon">📷</div>
+          <span>CAMERA OFFLINE</span>
+          <span class="ph-hint">Press START MONITORING to activate</span>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="cam-controls">
+        <button id="btn-start" class="btn-primary">▶ START MONITORING</button>
+        <button id="btn-stop"  class="btn-secondary" disabled>■ STOP</button>
+        <button id="btn-reset" class="btn-secondary">⟳ RESET ALARM</button>
+      </div>
+
+      <!-- Service status pills -->
+      <div class="svc-row">
+        <div class="svc-pill"><span class="svc-dot idle" id="dot-yolo"></span>YOLO</div>
+        <div class="svc-pill"><span class="svc-dot idle" id="dot-vlm"></span>VLM</div>
+        <div class="svc-pill"><span class="svc-dot idle" id="dot-cam"></span>CAMERA</div>
+      </div>
+    </div>
+
+    <!-- ── Info column ── -->
+    <div>
+
+      <!-- Stats -->
+      <div class="fw-card">
+        <div class="card-title">System Stats</div>
+        <div class="stat-row">
+          <div class="stat-box">
+            <div class="stat-val" id="s-detections">0</div>
+            <div class="stat-lbl">Detections</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="s-vlm">0</div>
+            <div class="stat-lbl">VLM Calls</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="s-fps">0</div>
+            <div class="stat-lbl">Frames/min</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-val" id="s-alarm">🟢</div>
+            <div class="stat-lbl">Alarm</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detections -->
+      <div class="fw-card">
+        <div class="card-title">Current Detections</div>
+        <div id="det-container">
+          <span class="no-threat">No threats detected</span>
+        </div>
+      </div>
+
+      <!-- VLM log -->
+      <div class="fw-card">
+        <div class="card-title">VLM Scene Analysis</div>
+        <div id="vlm-log">
+          <span class="log-empty">Waiting for VLM analysis…</span>
+        </div>
+      </div>
+
+    </div><!-- /info col -->
+  </div><!-- /main-grid -->
+</div><!-- /wrapper -->
+
+<script>
+"use strict";
+
+/* ═══════════════════════════════════════════════════════════
+   CONFIG
+═══════════════════════════════════════════════════════════ */
+const DETECT_INTERVAL_MS = 500;   // how often to grab a frame and call YOLO
+const MIN_CONF           = 0.5;   // minimum YOLO confidence to count
+const MAX_LOG_ENTRIES    = 12;
+
+/* ═══════════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════════ */
+const S = {
+  fireAlarm:        false,
+  alarmAudioActive: false,
+  totalDetections:  0,
+  vlmCalls:         0,
+  framesSent:       0,       // for fps counter
+  lastDetections:   [],
+  log:              [],      // [{ts, text}]
+  running:          false,
+  timerId:          null,
+  fpsTimerId:       null,
+  fpsCount:         0,
+};
+
+/* ═══════════════════════════════════════════════════════════
+   DOM REFS
+═══════════════════════════════════════════════════════════ */
+const $  = id => document.getElementById(id);
+const video      = $('preview-video');
+const canvas     = $('overlay-canvas');
+const ctx        = canvas.getContext('2d');
+const placeholder= $('cam-placeholder');
+const recDot     = $('rec-dot');
+const alarmBanner= $('alarm-banner');
+const alarmAudio = $('alarm-audio');
+const btnStart   = $('btn-start');
+const btnStop    = $('btn-stop');
+const btnReset   = $('btn-reset');
+const sDet       = $('s-detections');
+const sVlm       = $('s-vlm');
+const sFps       = $('s-fps');
+const sAlarm     = $('s-alarm');
+const detCont    = $('det-container');
+const vlmLog     = $('vlm-log');
+const dotYolo    = $('dot-yolo');
+const dotVlm     = $('dot-vlm');
+const dotCam     = $('dot-cam');
+
+/* ═══════════════════════════════════════════════════════════
+   OFFSCREEN CANVAS (frame capture)
+═══════════════════════════════════════════════════════════ */
+const offscreen = document.createElement('canvas');
+const offCtx    = offscreen.getContext('2d');
+
+function syncSize() {
+  const vw = video.videoWidth  || 640;
+  const vh = video.videoHeight || 480;
+  canvas.width  = offscreen.width  = vw;
+  canvas.height = offscreen.height = vh;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CAMERA
+═══════════════════════════════════════════════════════════ */
+let stream = null;
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    video.srcObject = stream;
+    await new Promise(res => video.addEventListener('loadedmetadata', res, { once: true }));
+    syncSize();
+
+    placeholder.style.display = 'none';
+    recDot.classList.add('visible');
+    dotCam.className = 'svc-dot ok';
+    btnStart.disabled = true;
+    btnStop.disabled  = false;
+
+    startLoop();
+  } catch (e) {
+    dotCam.className = 'svc-dot err';
+    alert('Camera error: ' + e.message);
+  }
+}
+
+function stopCamera() {
+  stopLoop();
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  video.srcObject = null;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  placeholder.style.display = 'flex';
+  recDot.classList.remove('visible');
+  dotCam.className = 'svc-dot idle';
+  btnStart.disabled = false;
+  btnStop.disabled  = true;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CAPTURE
+═══════════════════════════════════════════════════════════ */
+function captureBlob(quality = 0.75) {
+  if (!stream || video.readyState < 2) return Promise.resolve(null);
+  syncSize();
+  offCtx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
+  return new Promise(res => offscreen.toBlob(res, 'image/jpeg', quality));
+}
+
+/* ═══════════════════════════════════════════════════════════
+   API CALLS
+═══════════════════════════════════════════════════════════ */
+async function callYolo(blob) {
+  const fd = new FormData();
+  fd.append('file', blob, 'frame.jpg');
+  const res = await fetch('/api/detect', { method: 'POST', body: fd });
+  if (!res.ok) throw new Error(`YOLO HTTP ${res.status}`);
+  const data = await res.json();
+  return (data.detections || []).filter(d => d.confidence >= MIN_CONF);
+}
+
+async function callVlm(blob) {
+  const fd = new FormData();
+  fd.append('file', blob, 'frame.jpg');
+  const res = await fetch('/api/describe', { method: 'POST', body: fd });
+  if (!res.ok) throw new Error(`VLM HTTP ${res.status}`);
+  return await res.json(); // { detected, type, description }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DETECTION LOOP
+═══════════════════════════════════════════════════════════ */
+function startLoop() {
+  if (S.running) return;
+  S.running = true;
+
+  // FPS counter – counts frames sent per minute
+  S.fpsTimerId = setInterval(() => {
+    sFps.textContent = S.fpsCount * (60_000 / (DETECT_INTERVAL_MS * 60));
+    // simpler: just report how many fired in last ~5s, annualised
+    S.fpsCount = 0;
+  }, 5000);
+
+  S.timerId = setInterval(runDetection, DETECT_INTERVAL_MS);
+}
+
+function stopLoop() {
+  S.running = false;
+  clearInterval(S.timerId);
+  clearInterval(S.fpsTimerId);
+  S.timerId = S.fpsTimerId = null;
+}
+
+async function runDetection() {
+  if (!S.running) return;
+
+  const blob = await captureBlob(0.75);
+  if (!blob) return;
+  S.fpsCount++;
+
+  /* ── YOLO ── */
+  let dets = [];
+  try {
+    dets = await callYolo(blob);
+    dotYolo.className = 'svc-dot ok';
+  } catch (e) {
+    dotYolo.className = 'svc-dot err';
+    console.warn('[YOLO]', e.message);
+    // treat as empty detections → alarm off
+  }
+
+  drawBoxes(dets);
+  S.lastDetections = dets;
+
+  if (dets.length > 0) {
+    S.totalDetections += dets.length;
+    S.vlmCalls++;
+
+    /* ── VLM (only when YOLO fires) ── */
+    let vlm = null;
+    try {
+      const blob2 = await captureBlob(0.72);
+      vlm = await callVlm(blob2);
+      dotVlm.className = 'svc-dot ok';
+    } catch (e) {
+      dotVlm.className = 'svc-dot err';
+      const ts = nowHMS();
+      S.log.push({ ts, text: `[vlm error: ${e.message}]` });
+      console.warn('[VLM]', e.message);
+    }
+
+    if (vlm !== null) {
+      const logText = vlm.detected
+        ? vlm.description
+        : `[no fire/smoke — ${vlm.type ?? 'unknown'}]`;
+      S.log.push({ ts: nowHMS(), text: logText });
+      setAlarm(dets, vlm);
+    } else {
+      setAlarm([], null);          // VLM failed → no confirmation → off
+    }
+
+  } else {
+    /* YOLO sees nothing → unconditional off */
+    S.lastDetections = [];
+    S.fireAlarm = false;
+  }
+
+  render();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ALARM LOGIC  (VLM is sole authority)
+═══════════════════════════════════════════════════════════ */
+function setAlarm(dets, vlm) {
+  const confirmed = dets.length > 0 && vlm !== null && vlm.detected === true;
+  S.fireAlarm = confirmed;
+  if (!confirmed) S.alarmAudioActive = false;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   BOUNDING BOXES
+═══════════════════════════════════════════════════════════ */
+function drawBoxes(dets) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Scale: YOLO coords are in video-pixel space; canvas matches video resolution
+  for (const d of dets) {
+    const [x1, y1, x2, y2] = d.box;
+    const w = x2 - x1, h = y2 - y1;
+    const label = `${d.label} ${(d.confidence * 100).toFixed(0)}%`;
+
+    // Box
+    ctx.strokeStyle = '#3264ff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x1, y1, w, h);
+
+    // Label pill
+    ctx.font = 'bold 13px "Share Tech Mono", monospace';
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = '#3264ffcc';
+    ctx.fillRect(x1, y1 - 22, tw + 10, 20);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, x1 + 5, y1 - 7);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RENDER
+═══════════════════════════════════════════════════════════ */
+function render() {
+  renderBanner();
+  renderAudio();
+  renderStats();
+  renderDetections();
+  renderLog();
+}
+
+function renderBanner() {
+  if (S.fireAlarm) {
+    alarmBanner.className = 'active';
+    alarmBanner.innerHTML = '🚨 &nbsp; FIRE ALARM ACTIVE &nbsp; 🚨';
+  } else {
+    alarmBanner.className = 'nominal';
+    alarmBanner.innerHTML = '● &nbsp; SYSTEM NOMINAL';
+  }
+}
+
+function renderAudio() {
+  if (S.fireAlarm && !S.alarmAudioActive) {
+    alarmAudio.play().catch(() => {});   // may be blocked before first user gesture
+    S.alarmAudioActive = true;
+  } else if (!S.fireAlarm && S.alarmAudioActive) {
+    alarmAudio.pause();
+    alarmAudio.currentTime = 0;
+    S.alarmAudioActive = false;
+  }
+}
+
+function renderStats() {
+  sDet.textContent   = S.totalDetections;
+  sVlm.textContent   = S.vlmCalls;
+  sAlarm.textContent = S.fireAlarm ? '🔴' : '🟢';
+  // fps updated separately via interval
+}
+
+function renderDetections() {
+  if (!S.lastDetections.length) {
+    detCont.innerHTML = '<span class="no-threat">No threats detected</span>';
+    return;
+  }
+  detCont.innerHTML = S.lastDetections
+    .map(d => `<span class="det-badge">${esc(d.label)} ${(d.confidence*100).toFixed(0)}%</span>`)
+    .join('');
+}
+
+function renderLog() {
+  // Trim to max
+  if (S.log.length > MAX_LOG_ENTRIES) S.log = S.log.slice(-MAX_LOG_ENTRIES);
+
+  if (!S.log.length) {
+    vlmLog.innerHTML = '<span class="log-empty">Waiting for VLM analysis…</span>';
+    return;
+  }
+  const html = [...S.log].reverse().map(e =>
+    `<div class="log-entry"><span class="log-ts">[${e.ts}]</span>${esc(e.text)}</div>`
+  ).join('');
+  vlmLog.innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FPS DISPLAY (separate timer)
+═══════════════════════════════════════════════════════════ */
+// Count detections sent per minute – rough estimate
+let _fpsWindow = 0;
+setInterval(() => {
+  sFps.textContent = _fpsWindow * 12; // 5s window × 12 = per-minute
+  _fpsWindow = 0;
+}, 5000);
+// Patch runDetection to tick the window counter
+const _origRunDetection = runDetection;
+// (already increments S.fpsCount which we read above)
+
+/* ═══════════════════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════════════════ */
+function nowHMS() {
+  return new Date().toTimeString().slice(0, 8);
+}
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   BUTTON EVENTS
+═══════════════════════════════════════════════════════════ */
+btnStart.addEventListener('click', startCamera);
+
+btnStop.addEventListener('click', () => {
+  stopCamera();
+  S.fireAlarm = false;
+  render();
+});
+
+btnReset.addEventListener('click', () => {
+  S.fireAlarm        = false;
+  S.alarmAudioActive = false;
+  S.totalDetections  = 0;
+  S.vlmCalls         = 0;
+  S.lastDetections   = [];
+  S.log              = [];
+  alarmAudio.pause();
+  alarmAudio.currentTime = 0;
+  render();
+});
+
+/* ═══════════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════════ */
+render();
+</script>
+</body>
+</html>

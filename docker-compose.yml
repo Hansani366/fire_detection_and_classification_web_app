@@ -5,26 +5,42 @@ services:
     build: ./yolo-service
     container_name: firewatch-yolo
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
 
-  # ── VLM Vision Service ─────────────────────────────────────
+  # ── VLM Vision Service ────────────────────────────────────────
   vlm-service:
     build: ./vlm-service
     container_name: firewatch-vlm
     restart: unless-stopped
-    ports:
-      - "8019:8019"
+    expose:
+      - "8019"
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
 
-  # ── Streamlit Frontend ────────────────────────────────────────
+  # ── HTML/JS Frontend ──────────────────────────────────────────
   frontend:
     build: ./frontend
     container_name: firewatch-frontend
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
+    environment:
+      - YOLO_URL=http://yolo-service:8000/detect
+      - GEMINI_URL=http://vlm-service:8019/describe-image/
     depends_on:
       - yolo-service
       - vlm-service
+
+  # ── HTTPS Reverse Proxy ───────────────────────────────────────
+  # Certs are generated automatically during `docker compose build`.
+  # No manual cert generation needed.
+  nginx:
+    build: ./nginx
+    container_name: firewatch-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"    # redirects → HTTPS
+      - "443:443"  # open https://localhost
+    depends_on:
+      - frontend
