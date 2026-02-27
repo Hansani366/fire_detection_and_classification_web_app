@@ -1,6 +1,5 @@
 import streamlit as st
 import requests
-import base64
 import time
 import threading
 import queue
@@ -18,7 +17,8 @@ st.set_page_config(
 )
 
 # ── Custom CSS ───────────────────────────────────────────────────────────────
-st.markdown("""
+st.markdown(
+    """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600;700&display=swap');
 
@@ -36,7 +36,6 @@ html, body, [data-testid="stAppViewContainer"] {
 
 .main .block-container { padding-top: 1rem; max-width: 1400px; }
 
-/* Header */
 .fw-header {
     display: flex;
     align-items: center;
@@ -60,7 +59,6 @@ html, body, [data-testid="stAppViewContainer"] {
     margin-top: -4px;
 }
 
-/* Alarm banner */
 .alarm-on {
     background: linear-gradient(90deg, #ff1a00, #ff4b2b, #ff1a00);
     background-size: 200% 100%;
@@ -98,7 +96,6 @@ html, body, [data-testid="stAppViewContainer"] {
     100% { box-shadow: 0 0 60px #ff1a00cc, 0 0 120px #ff1a0066; }
 }
 
-/* Cards */
 .fw-card {
     background: #111118;
     border: 1px solid #1f1f2e;
@@ -126,7 +123,6 @@ html, body, [data-testid="stAppViewContainer"] {
     box-shadow: 0 0 8px #ff4b2b;
 }
 
-/* VLM log */
 .vlm-log {
     background: #0d0d14;
     border: 1px solid #1a1a28;
@@ -141,19 +137,11 @@ html, body, [data-testid="stAppViewContainer"] {
     white-space: pre-wrap;
     word-break: break-word;
 }
-.vlm-timestamp {
-    color: #ff4b2b99;
-    margin-right: 8px;
-}
+.vlm-timestamp { color: #ff4b2b99; margin-right: 8px; }
 .vlm-entry { margin-bottom: 10px; border-bottom: 1px solid #1a1a28; padding-bottom: 10px; }
 .vlm-entry:last-child { border-bottom: none; margin-bottom: 0; }
 
-/* Stats */
-.stat-row {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 16px;
-}
+.stat-row { display: flex; gap: 12px; margin-bottom: 16px; }
 .stat-box {
     flex: 1;
     background: #0d0d14;
@@ -162,19 +150,9 @@ html, body, [data-testid="stAppViewContainer"] {
     padding: 12px;
     text-align: center;
 }
-.stat-value {
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 1.6rem;
-    color: #ff4b2b;
-}
-.stat-label {
-    font-size: 0.7rem;
-    color: #555;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-}
+.stat-value { font-family: 'Share Tech Mono', monospace; font-size: 1.6rem; color: #ff4b2b; }
+.stat-label { font-size: 0.7rem; color: #555; letter-spacing: 2px; text-transform: uppercase; }
 
-/* Detection badge */
 .det-badge {
     display: inline-block;
     background: #ff4b2b22;
@@ -187,7 +165,6 @@ html, body, [data-testid="stAppViewContainer"] {
     margin: 3px;
 }
 
-/* Streamlit overrides */
 [data-testid="stButton"] button {
     background: #ff4b2b !important;
     color: white !important;
@@ -206,33 +183,46 @@ html, body, [data-testid="stAppViewContainer"] {
 
 div[data-testid="column"] { padding: 0 6px; }
 [data-testid="stMarkdownContainer"] p { margin: 0; }
-
 .stSpinner > div { border-top-color: #ff4b2b !important; }
-
-/* Hide Streamlit chrome */
 #MainMenu, footer, header { visibility: hidden; }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-# ── Session state init ───────────────────────────────────────────────────────
-if "fire_alarm" not in st.session_state:
-    st.session_state.fire_alarm = False
-if "vlm_log" not in st.session_state:
-    st.session_state.vlm_log = []
-if "total_detections" not in st.session_state:
-    st.session_state.total_detections = 0
-if "vlm_calls" not in st.session_state:
-    st.session_state.vlm_calls = 0
-if "last_detections" not in st.session_state:
-    st.session_state.last_detections = []
+# ── Session state ────────────────────────────────────────────────────────────
+for key, default in [
+    ("fire_alarm", False),
+    ("gemini_log", []),
+    ("total_detections", 0),
+    ("gemini_calls", 0),
+    ("last_detections", []),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 YOLO_URL = "http://yolo-service:8000/detect"
-VLM_URL  = "http://vlm-service:8019/describe-image/"
-FIRE_KEYWORDS = {"fire", "smoke", "flame", "flames", "burning", "blaze", "wildfire", "inferno", "ember", "combustion"}
+GEMINI_URL = "http://vlm-service:8019/describe-image/"
+FIRE_KEYWORDS = {
+    "fire",
+    "smoke",
+    "flame",
+    "flames",
+    "burning",
+    "blaze",
+    "wildfire",
+    "inferno",
+    "ember",
+    "combustion",
+}
+
 
 # ── Video processor ──────────────────────────────────────────────────────────
 class FireDetector(VideoProcessorBase):
     def __init__(self):
+        # Latest detections shared between recv() thread and Streamlit thread
+        self._lock = threading.Lock()
+        self._detections = []  # list of det dicts from YOLO
         self.result_queue = queue.Queue(maxsize=2)
         self._last_send = 0
 
@@ -240,47 +230,87 @@ class FireDetector(VideoProcessorBase):
         img = frame.to_ndarray(format="bgr24")
         now = time.time()
 
-        # Send frame to YOLO every 500ms
+        # Send to YOLO every 500 ms (non-blocking background thread)
         if now - self._last_send > 0.5:
             self._last_send = now
-            threading.Thread(target=self._process, args=(img.copy(),), daemon=True).start()
+            threading.Thread(
+                target=self._call_yolo, args=(img.copy(),), daemon=True
+            ).start()
 
-        return frame  # pass-through; overlay drawn in Streamlit
+        # Draw latest bounding boxes directly onto the frame
+        with self._lock:
+            dets = list(self._detections)
 
-    def _process(self, img):
+        for det in dets:
+            x1, y1, x2, y2 = [int(v) for v in det["box"]]
+            label = f"{det['label']} {det['confidence']*100:.0f}%"
+            # Box
+            cv2.rectangle(img, (x1, y1), (x2, y2), (50, 100, 255), 2)
+            # Label background
+            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+            cv2.rectangle(
+                img, (x1, y1 - th - 10), (x1 + tw + 6, y1), (50, 100, 255), -1
+            )
+            # Label text
+            cv2.putText(
+                img,
+                label,
+                (x1 + 3, y1 - 5),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (255, 255, 255),
+                2,
+            )
+
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+    def _call_yolo(self, img: np.ndarray):
         try:
             _, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-            resp = requests.post(YOLO_URL, files={"file": ("frame.jpg", buf.tobytes(), "image/jpeg")}, timeout=3)
+            resp = requests.post(
+                YOLO_URL,
+                files={"file": ("frame.jpg", buf.tobytes(), "image/jpeg")},
+                timeout=3,
+            )
             if resp.status_code == 200:
-                data = resp.json()
-                dets = [d for d in data.get("detections", []) if d["confidence"] >= 0.5]
+                dets = [
+                    d
+                    for d in resp.json().get("detections", [])
+                    if d["confidence"] >= 0.5
+                ]
+                with self._lock:
+                    self._detections = dets
                 if not self.result_queue.full():
-                    self.result_queue.put({"detections": dets, "image": img, "ts": time.time()})
-        except Exception as e:
+                    self.result_queue.put({"detections": dets, "image": img})
+        except Exception:
             pass
 
 
-detector_ctx = None
-
 # ── Header ───────────────────────────────────────────────────────────────────
-st.markdown("""
+st.markdown(
+    """
 <div class="fw-header">
   <div>
     <div class="fw-logo">🔥 FIREWATCH</div>
     <div class="fw-subtitle">AI-Powered Smoke &amp; Fire Detection System</div>
   </div>
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-# ── Alarm banner (placeholder, updated in loop) ──────────────────────────────
 alarm_ph = st.empty()
 
-# ── Layout ───────────────────────────────────────────────────────────────────
 col_cam, col_info = st.columns([3, 2], gap="medium")
 
 with col_cam:
-    st.markdown('<div class="fw-card"><div class="fw-card-title">Live Camera Feed</div>', unsafe_allow_html=True)
-    RTC_CONFIG = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
+    st.markdown(
+        '<div class="fw-card"><div class="fw-card-title">Live Camera Feed</div>',
+        unsafe_allow_html=True,
+    )
+    RTC_CONFIG = RTCConfiguration(
+        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+    )
     ctx = webrtc_streamer(
         key="firewatch",
         video_processor_factory=FireDetector,
@@ -291,74 +321,103 @@ with col_cam:
     st.markdown("</div>", unsafe_allow_html=True)
 
 with col_info:
-    # Stats row
-    stat_total_ph = st.empty()
-    stat_vlm_ph   = st.empty()
+    stat_ph = st.empty()
 
-    # Current detections
-    st.markdown('<div class="fw-card" style="margin-bottom:12px"><div class="fw-card-title">Current Detections</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="fw-card" style="margin-bottom:12px"><div class="fw-card-title">Current Detections</div>',
+        unsafe_allow_html=True,
+    )
     det_ph = st.empty()
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # VLM log
-    st.markdown('<div class="fw-card"><div class="fw-card-title">VLM Scene Analysis</div>', unsafe_allow_html=True)
-    vlm_ph = st.empty()
+    st.markdown(
+        '<div class="fw-card"><div class="fw-card-title">Gemini Scene Analysis</div>',
+        unsafe_allow_html=True,
+    )
+    gemini_ph = st.empty()
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Reset button
     if st.button("⟳  RESET ALARM"):
         st.session_state.fire_alarm = False
-        st.session_state.vlm_log = []
+        st.session_state.gemini_log = []
         st.session_state.total_detections = 0
-        st.session_state.vlm_calls = 0
+        st.session_state.gemini_calls = 0
         st.session_state.last_detections = []
 
+
 # ── Render helpers ───────────────────────────────────────────────────────────
-def render_alarm(active: bool):
+def render_alarm(active):
     if active:
-        alarm_ph.markdown('<div class="alarm-on">🚨 &nbsp; FIRE ALARM ACTIVE &nbsp; 🚨</div>', unsafe_allow_html=True)
+        alarm_ph.markdown(
+            '<div class="alarm-on">🚨 &nbsp; FIRE ALARM ACTIVE &nbsp; 🚨</div>',
+            unsafe_allow_html=True,
+        )
     else:
-        alarm_ph.markdown('<div class="alarm-off">● &nbsp; SYSTEM NOMINAL</div>', unsafe_allow_html=True)
+        alarm_ph.markdown(
+            '<div class="alarm-off">● &nbsp; SYSTEM NOMINAL</div>',
+            unsafe_allow_html=True,
+        )
+
 
 def render_stats():
-    stat_total_ph.markdown(f"""
+    stat_ph.markdown(
+        f"""
     <div class="stat-row">
       <div class="stat-box"><div class="stat-value">{st.session_state.total_detections}</div><div class="stat-label">Detections</div></div>
-      <div class="stat-box"><div class="stat-value">{st.session_state.vlm_calls}</div><div class="stat-label">VLM Calls</div></div>
+      <div class="stat-box"><div class="stat-value">{st.session_state.gemini_calls}</div><div class="stat-label">Gemini Calls</div></div>
       <div class="stat-box"><div class="stat-value">{'🔴' if st.session_state.fire_alarm else '🟢'}</div><div class="stat-label">Alarm</div></div>
-    </div>""", unsafe_allow_html=True)
+    </div>""",
+        unsafe_allow_html=True,
+    )
+
 
 def render_detections(dets):
     if not dets:
-        det_ph.markdown('<span style="color:#333;font-size:0.85rem;font-family:\'Share Tech Mono\',monospace">No threats detected</span>', unsafe_allow_html=True)
+        det_ph.markdown(
+            "<span style=\"color:#333;font-size:0.85rem;font-family:'Share Tech Mono',monospace\">No threats detected</span>",
+            unsafe_allow_html=True,
+        )
     else:
-        badges = "".join(f'<span class="det-badge">{d["label"]} {d["confidence"]*100:.0f}%</span>' for d in dets)
+        badges = "".join(
+            f'<span class="det-badge">{d["label"]} {d["confidence"]*100:.0f}%</span>'
+            for d in dets
+        )
         det_ph.markdown(badges, unsafe_allow_html=True)
 
-def render_vlm_log():
-    if not st.session_state.vlm_log:
-        vlm_ph.markdown('<div class="vlm-log" style="color:#333">Waiting for VLM analysis...</div>', unsafe_allow_html=True)
+
+def render_gemini_log():
+    if not st.session_state.gemini_log:
+        gemini_ph.markdown(
+            '<div class="vlm-log" style="color:#333">Waiting for Gemini analysis...</div>',
+            unsafe_allow_html=True,
+        )
         return
     entries = ""
-    for entry in reversed(st.session_state.vlm_log[-10:]):
+    for entry in reversed(st.session_state.gemini_log[-10:]):
         entries += f'<div class="vlm-entry"><span class="vlm-timestamp">[{entry["time"]}]</span>{entry["text"]}</div>'
-    vlm_ph.markdown(f'<div class="vlm-log">{entries}</div>', unsafe_allow_html=True)
+    gemini_ph.markdown(f'<div class="vlm-log">{entries}</div>', unsafe_allow_html=True)
 
-def call_vlm(img: np.ndarray) -> str:
+
+def call_gemini(img: np.ndarray) -> str:
     _, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
     try:
-        resp = requests.post(VLM_URL, files={"file": ("frame.jpg", buf.tobytes(), "image/jpeg")}, timeout=15)
+        resp = requests.post(
+            GEMINI_URL,
+            files={"file": ("frame.jpg", buf.tobytes(), "image/jpeg")},
+            timeout=15,
+        )
         if resp.status_code == 200:
             return resp.json().get("description", "")
     except Exception as e:
-        return f"[VLM error: {e}]"
+        return f"[Gemini error: {e}]"
     return ""
+
 
 # ── Main loop ────────────────────────────────────────────────────────────────
 render_alarm(st.session_state.fire_alarm)
 render_stats()
 render_detections(st.session_state.last_detections)
-render_vlm_log()
+render_gemini_log()
 
 if ctx and ctx.video_processor:
     proc: FireDetector = ctx.video_processor
@@ -369,26 +428,23 @@ if ctx and ctx.video_processor:
             render_alarm(st.session_state.fire_alarm)
             render_stats()
             render_detections(st.session_state.last_detections)
-            render_vlm_log()
+            render_gemini_log()
             continue
 
         dets = result["detections"]
-        img  = result["image"]
+        img = result["image"]
 
         if dets:
             st.session_state.total_detections += len(dets)
             st.session_state.last_detections = dets
 
-            # Send to VLM
-            st.session_state.vlm_calls += 1
-            description = call_vlm(img)
+            st.session_state.gemini_calls += 1
+            description = call_gemini(img)
 
             ts = time.strftime("%H:%M:%S")
-            st.session_state.vlm_log.append({"time": ts, "text": description})
+            st.session_state.gemini_log.append({"time": ts, "text": description})
 
-            # Check for fire/smoke keywords
-            desc_lower = description.lower()
-            if any(kw in desc_lower for kw in FIRE_KEYWORDS):
+            if any(kw in description.lower() for kw in FIRE_KEYWORDS):
                 st.session_state.fire_alarm = True
         else:
             st.session_state.last_detections = []
@@ -396,12 +452,11 @@ if ctx and ctx.video_processor:
         render_alarm(st.session_state.fire_alarm)
         render_stats()
         render_detections(st.session_state.last_detections)
-        render_vlm_log()
+        render_gemini_log()
 else:
-    # Idle polling when camera not active
     while True:
         time.sleep(1)
         render_alarm(st.session_state.fire_alarm)
         render_stats()
         render_detections(st.session_state.last_detections)
-        render_vlm_log()
+        render_gemini_log()
