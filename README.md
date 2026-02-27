@@ -1,146 +1,75 @@
-# 🔥 Fire Detection Vision System
+# 🔥 FireWatch AI — Fire & Smoke Detection System
 
-## 📌 Project Description
-
-This project is a demonstration of an integrated vision system for fire detection.  
-It combines:
-
-- **YOLO** for real-time object detection  
-- **Vision-Language Model (VLM)** for image captioning and visual reasoning  
-
-The system captures live camera input from a web interface, performs object detection using YOLO, and generates descriptive captions using a VLM model. Both outputs are displayed on the same web page.
+A real-time fire detection system using **YOLOv11** for object detection and **Gemini 2.5 Flash** for scene analysis, built on a modular microservices architecture.
 
 ---
-
-## 🏗️ System Architecture
-
-The project follows a modular, microservices-based architecture to ensure scalability, flexibility, and easier maintenance.
-
----
-
-## 📁 Project Structure
-
-- **`frontend/`**  
-  Web-based user interface that:
-  - Captures live camera feed  
-  - Displays YOLO detection results (bounding boxes)  
-  - Shows VLM-generated captions  
-
-- **`yolo-service/`**  
-  Backend service responsible for object detection.
-  - Uses **YOLOv11** for detecting fire-related objects  
-  - Returns bounding boxes and confidence scores  
-
-- **`vlm-service/`**  
-  Backend service responsible for visual reasoning.
-  - Uses **Moondream VLM** for image captioning  
-  - Generates descriptive insights about detected scenes  
-
----
-
-## 🚀 Key Features
-
-- Real-time webcam streaming  
-- Fire-related object detection  
-- AI-powered scene understanding  
-- Modular service-based design  
-- Dockerized deployment support  
-
----
-
-## 🛠️ Technologies Used
-
-- YOLOv11  
-- Moondream VLM  
-- Docker  
-- Web frontend (live camera streaming)  
-
-# 🔥 FireWatch AI — Smoke & Fire Detection System
-
-A real-time computer vision system that uses **YOLOv11** for fire/smoke object detection and **Moondream VLM** for scene description, with a sleek **Streamlit** dashboard.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                  Streamlit Frontend                  │
-│  - Live camera feed (WebRTC)                        │
-│  - Bounding box overlay                             │
-│  - VLM analysis log                                 │
-│  - 🚨 Fire Alarm indicator                          │
-└──────────┬──────────────────────┬───────────────────┘
-           │  POST /detect        │  POST /describe-image/
-           ▼                      ▼
-┌──────────────────┐   ┌──────────────────────────────┐
-│  YOLO Service    │   │       VLM Service             │
-│  (port 8000)     │   │  Moondream via Ollama         │
-│  Fire & Smoke    │   │  (port 8019)                  │
-│  Detection       │   │  Scene description            │
-└──────────────────┘   └──────────────────────────────┘
+Camera Feed (Browser)
+       │
+       ▼
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   Frontend      │────▶│  YOLO Service    │     │  VLM Service    │
+│   (Streamlit)   │     │  Fire & Smoke    │────▶│  Scene Analysis │
+│   port 3000     │     │  port 8000       │     │  port 8019      │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
 ```
 
-## How It Works
+**Flow:** Camera → YOLO detects fire/smoke (≥50% confidence) → VLM describes the scene → keyword match → 🚨 Alarm
 
-1. Browser captures your laptop camera via WebRTC
-2. Every 500ms, a frame is sent to **YOLO** for fire/smoke detection
-3. If any detection has **≥50% confidence**, the frame is forwarded to **Moondream VLM**
-4. VLM generates a natural-language scene description
-5. If the description contains fire/smoke keywords → **🚨 FIRE ALARM ON**
+---
+
+## Project Structure
+
+```
+mid-demo-vision-system/
+├── frontend/          # Streamlit dashboard (live feed + alarm UI)
+├── yolo-service/      # YOLOv11 fire & smoke detection API
+├── vlm-service/    # Gemini 2.5 Flash scene description API
+├── .env               # Your API keys (never commit this)
+├── sample.env         # Template for .env
+└── docker-compose.yml
+```
+
+---
 
 ## Quick Start
 
 ```bash
-# 1. Place your trained YOLO model
+# 1. Set up environment
+cp sample.env .env
+# Add your Google API key to .env
+
+# 2. Place your YOLO model
 cp your_model.pt yolo-service/best.pt
 
-# 2. Build and start all services
-docker-compose up --build
+# 3. Build and run
+docker compose up --build
 
-# 3. Open browser
+# 4. Open in browser
 open http://localhost:3000
 ```
 
-> ⚠️ **Allow camera access** when your browser prompts.
+> ⚠️ Allow camera access when the browser prompts.
 
-## Services
+---
 
-| Service | URL | Description |
-|---------|-----|-------------|
-| Frontend (Streamlit) | http://localhost:3000 | Web dashboard |
-| YOLO API | http://localhost:8000 | Detection endpoint |
-| VLM API | http://localhost:8019 | Scene description |
+## Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Object Detection | YOLOv11 |
+| Scene Analysis | Gemini 2.5 Flash |
+| Frontend | Streamlit + WebRTC |
+| Deployment | Docker Compose |
+
+---
 
 ## Health Checks
 
 ```bash
 curl http://localhost:8000/health   # YOLO
-curl http://localhost:8019/health   # VLM / Ollama
+curl http://localhost:8019/health   # VLM
 ```
-
-## Alarm Keywords
-
-The system triggers the alarm if VLM output contains any of:
-`fire`, `smoke`, `flame`, `flames`, `burning`, `blaze`, `wildfire`, `inferno`, `ember`, `combustion`
-
-## Notes
-
-- First startup of VLM service will pull the Moondream model (~1.7GB) — takes a few minutes
-- For GPU acceleration, uncomment the `deploy` block in `docker-compose.yml`
-- The VLM service requires `shm_size: 2gb` for Ollama model loading
-
-# Supportive Repos Used When Writing This Framework
-
-- https://github.com/Hansani366/streamlit_fastapi_webapp
-- https://github.com/Hansani366/yolo_vlm_webapp
-- https://github.com/Hansani366/vlm_or_mmllm_visual_reasoning
-
-# Time Taken to Build with VLM only mode
-
-| Stage                 | Approx. Time |
-|-----------------------|--------------|
-| YOLO Dependencies     | ~35 min      |
-| Ollama Setup          | ~22 min      |
-| Frontend Dependencies | ~5 min       |
-| System Packages       | ~2–4 min     |
-| **Total (First Build)** | **~40–45 min** |
-| Subsequent Builds     | 1–5 min      |

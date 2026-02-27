@@ -1,9 +1,6 @@
 fastapi
 uvicorn[standard]
 python-multipart
-requests
 python-dotenv
-# Gemini backend
 langchain-google-genai
 langchain-core
-# Moondream backend (Ollama REST — no extra pip packages needed)

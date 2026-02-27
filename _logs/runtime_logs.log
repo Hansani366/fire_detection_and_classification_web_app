@@ -1,0 +1,653 @@
+[+] Building 12.1s (31/33)                                                                                                                                      
+ => => transferring dockerfile: 248B                                                                                                                       0.0s
+ => [frontend internal] load build definition from Dockerfile                                                                                              0.0s
+ => => transferring dockerfile: 491B                                                                                                                       0.0s
+ => [yolo-service internal] load metadata for docker.io/library/python:3.11-slim                                                                           2.5s
+ => [auth] library/python:pull token for registry-1.docker.io                                                                                              0.0s
+ => [vlm-service internal] load .dockerignore                                                                                                              0.0s
+ => => transferring context: 2B                                                                                                                            0.0s
+ => [frontend internal] load .dockerignore                                                                                                                 0.0s
+ => => transferring context: 2B                                                                                                                            0.0s
+ => [yolo-service internal] load .dockerignore                                                                                                             0.0s
+ => => transferring context: 2B                                                                                                                            0.0s
+ => CACHED [yolo-service 1/5] FROM docker.io/library/python:3.11-slim@sha256:c8271b1f627d0068857dce5b53e14a9558603b527e46f1f901722f935b786a39              0.0s
+ => [vlm-service internal] load build context                                                                                                              0.0s
+ => => transferring context: 1.87kB                                                                                                                        0.0s
+ => [vlm-service 2/5] WORKDIR /app                                                                                                                         0.1s
+ => [frontend internal] load build context                                                                                                                 0.0s
+ => => transferring context: 63B                                                                                                                           0.0s
+ => [yolo-service internal] load build context                                                                                                             0.0s
+ => => transferring context: 93B                                                                                                                           0.0s
+ => CACHED [frontend 2/6] RUN apt-get update && apt-get install -y     libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1     && rm -rf /var/lib/apt/li  0.0s
+ => CACHED [frontend 3/6] WORKDIR /app                                                                                                                     0.0s
+ => CACHED [frontend 4/6] COPY requirements.txt .                                                                                                          0.0s
+ => CACHED [frontend 5/6] RUN pip install --no-cache-dir -r requirements.txt                                                                               0.0s
+ => CACHED [frontend 6/6] COPY app.py .                                                                                                                    0.0s
+ => CACHED [yolo-service 2/8] RUN apt-get update && apt-get install -y     libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1     libgl1     && rm -rf   0.0s
+ => CACHED [yolo-service 3/8] WORKDIR /app                                                                                                                 0.0s
+ => CACHED [yolo-service 4/8] COPY requirements.txt .                                                                                                      0.0s
+ => CACHED [yolo-service 5/8] RUN pip install --no-cache-dir     torch torchvision     --index-url https://download.pytorch.org/whl/cpu                    0.0s
+ => CACHED [yolo-service 6/8] RUN pip install --no-cache-dir -r requirements.txt                                                                           0.0s
+ => CACHED [yolo-service 7/8] COPY best.pt .                                                                                                               0.0s
+ => CACHED [yolo-service 8/8] COPY main.py .                                                                                                               0.0s
+ => [yolo-service] exporting to image                                                                                                                      0.0s
+ => => exporting layers                                                                                                                                    0.0s
+ => => writing image sha256:6731ae6b8d20ff8d9019d439947d339af68f7fe91568ef3d2682a715ee1f3587                                                               0.0s
+ => => naming to docker.io/library/mid-demo-vision-system-yolo-service                                                                                     0.0s
+ => [frontend] exporting to image                                                                                                                          0.0s
+[+] Building 12.3s (31/33)                                                                                                                                      
+ => => transferring dockerfile: 248B                                                                                                                       0.0s
+ => [frontend internal] load build definition from Dockerfile                                                                                              0.0s
+ => => transferring dockerfile: 491B                                                                                                                       0.0s
+ => [yolo-service internal] load metadata for docker.io/library/python:3.11-slim                                                                           2.5s
+ => [auth] library/python:pull token for registry-1.docker.io                                                                                              0.0s
+ => [vlm-service internal] load .dockerignore                                                                                                              0.0s
+ => => transferring context: 2B                                                                                                                            0.0s
+ => [frontend internal] load .dockerignore                                                                                                                 0.0s
+ => => transferring context: 2B                                                                                                                            0.0s
+ => [yolo-service internal] load .dockerignore                                                                                                             0.0s
+ => => transferring context: 2B                                                                                                                            0.0s
+ => CACHED [yolo-service 1/5] FROM docker.io/library/python:3.11-slim@sha256:c8271b1f627d0068857dce5b53e14a9558603b527e46f1f901722f935b786a39              0.0s
+ => [vlm-service internal] load build context                                                                                                              0.0s
+ => => transferring context: 1.87kB                                                                                                                        0.0s
+ => [vlm-service 2/5] WORKDIR /app                                                                                                                         0.1s
+ => [frontend internal] load build context                                                                                                                 0.0s
+ => => transferring context: 63B                                                                                                                           0.0s
+ => [yolo-service internal] load build context                                                                                                             0.0s
+ => => transferring context: 93B                                                                                                                           0.0s
+ => CACHED [frontend 2/6] RUN apt-get update && apt-get install -y     libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1     && rm -rf /var/lib/apt/li  0.0s
+ => CACHED [frontend 3/6] WORKDIR /app                                                                                                                     0.0s
+ => CACHED [frontend 4/6] COPY requirements.txt .                                                                                                          0.0s
+ => CACHED [frontend 5/6] RUN pip install --no-cache-dir -r requirements.txt                                                                               0.0s
+ => CACHED [frontend 6/6] COPY app.py .                                                                                                                    0.0s
+ => CACHED [yolo-service 2/8] RUN apt-get update && apt-get install -y     libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1     libgl1     && rm -rf   0.0s
+ => CACHED [yolo-service 3/8] WORKDIR /app                                                                                                                 0.0s
+ => CACHED [yolo-service 4/8] COPY requirements.txt .                                                                                                      0.0s
+ => CACHED [yolo-service 5/8] RUN pip install --no-cache-dir     torch torchvision     --index-url https://download.pytorch.org/whl/cpu                    0.0s
+ => CACHED [yolo-service 6/8] RUN pip install --no-cache-dir -r requirements.txt                                                                           0.0s
+ => CACHED [yolo-service 7/8] COPY best.pt .                                                                                                               0.0s
+ => CACHED [yolo-service 8/8] COPY main.py .                                                                                                               0.0s
+ => [yolo-service] exporting to image                                                                                                                      0.0s
+ => => exporting layers                                                                                                                                    0.0s
+ => => writing image sha256:6731ae6b8d20ff8d9019d439947d339af68f7fe91568ef3d2682a715ee1f3587                                                               0.0s
+ => => naming to docker.io/library/mid-demo-vision-system-yolo-service                                                                                     0.0s
+ => [frontend] exporting to image                                                                                                                          0.0s
+[+] Building 12.4s (31/33)                                                                                                                                      
+ => => transferring dockerfile: 248B                                                                                                                       0.0s
+ => [frontend internal] load build definition from Dockerfile                                                                                              0.0s
+ => => transferring dockerfile: 491B                                                                                                                       0.0s
+ => [yolo-service internal] load metadata for docker.io/library/python:3.11-slim                                                                           2.5s
+ => [auth] library/python:pull token for registry-1.docker.io                                                                                              0.0s
+ => [vlm-service internal] load .dockerignore                                                                                                              0.0s
+ => => transferring context: 2B                                                                                                                            0.0s
+ => [frontend internal] load .dockerignore                                                                                                                 0.0s
+ => => transferring context: 2B                                                                                                                            0.0s
+ => [yolo-service internal] load .dockerignore                                                                                                             0.0s
+ => => transferring context: 2B                                                                                                                            0.0s
+ => CACHED [yolo-service 1/5] FROM docker.io/library/python:3.11-slim@sha256:c8271b1f627d0068857dce5b53e14a9558603b527e46f1f901722f935b786a39              0.0s
+ => [vlm-service internal] load build context                                                                                                              0.0s
+ => => transferring context: 1.87kB                                                                                                                        0.0s
+ => [vlm-service 2/5] WORKDIR /app                                                                                                                         0.1s
+ => [frontend internal] load build context                                                                                                                 0.0s
+ => => transferring context: 63B                                                                                                                           0.0s
+ => [yolo-service internal] load build context                                                                                                             0.0s
+ => => transferring context: 93B                                                                                                                           0.0s
+ => CACHED [frontend 2/6] RUN apt-get update && apt-get install -y     libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1     && rm -rf /var/lib/apt/li  0.0s
+ => CACHED [frontend 3/6] WORKDIR /app                                                                                                                     0.0s
+ => CACHED [frontend 4/6] COPY requirements.txt .                                                                                                          0.0s
+ => CACHED [frontend 5/6] RUN pip install --no-cache-dir -r requirements.txt                                                                               0.0s
+ => CACHED [frontend 6/6] COPY app.py .                                                                                                                    0.0s
+ => CACHED [yolo-service 2/8] RUN apt-get update && apt-get install -y     libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1     libgl1     && rm -rf   0.0s
+ => CACHED [yolo-service 3/8] WORKDIR /app                                                                                                                 0.0s
+ => CACHED [yolo-service 4/8] COPY requirements.txt .                                                                                                      0.0s
+ => CACHED [yolo-service 5/8] RUN pip install --no-cache-dir     torch torchvision     --index-url https://download.pytorch.org/whl/cpu                    0.0s
+ => CACHED [yolo-service 6/8] RUN pip install --no-cache-dir -r requirements.txt                                                                           0.0s
+ => CACHED [yolo-service 7/8] COPY best.pt .                                                                                                               0.0s
+ => CACHED [yolo-service 8/8] COPY main.py .                                                                                                               0.0s
+ => [yolo-service] exporting to image                                                                                                                      0.0s
+ => => exporting layers                                                                                                                                    0.0s
+ => => writing image sha256:6731ae6b8d20ff8d9019d439947d339af68f7fe91568ef3d2682a715ee1f3587                                                               0.0s
+ => => naming to docker.io/library/mid-demo-vision-system-yolo-service                                                                                     0.0s
+ => [frontend] exporting to image                                                                                                                          0.0s
+[+] Building 12.5s (31/33)                                                                                                                                      
+ => => writing image sha256:7b94875a8a48c7a81078ffd3f8ccffb8a83565f60b048e11b96be053cf2d295e                                                               0.0s
+ => => naming to docker.io/library/mid-demo-vision-system-frontend                                                                                         0.0s
+ => [vlm-service 3/5] COPY requirements.txt .                                                                                                              0.1s
+ => [vlm-service 4/5] RUN pip install --no-cache-dir -r requirements.txt                                                                                   8.9s
+ => => #   Downloading pyyaml-6.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)                         
+ => => # Collecting uvloop>=0.15.1 (from uvicorn[standard]->-r requirements.txt (line 2))                                                                      
+ => => #   Downloading uvloop-0.22.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (4.9 kB)                        
+ => => # Collecting watchfiles>=0.20 (from uvicorn[standard]->-r requirements.txt (line 2))                                                                    
+ => => #   Downloading watchfiles-1.1.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.9 kB)                                           
+ => => # Collecting websockets>=10.4 (from uvicorn[standard]->-r requirements.txt (line 2))                                                                    
+ => [yolo-service] resolving provenance for metadata file                                                                                                  0.0s
+ => [frontend] resolving provenance for metadata file                                                                                                      0.0s                                                                                                                                                                                                                                                                                                        
+[+] Building 46.7s (35/35) FINISHED                                                                                                                             
+ => [internal] load local bake definitions                                                                                                                 0.0s 
+ => => reading from stdin 1.71kB                                                                                                                           0.0s 
+ => [yolo-service internal] load build definition from Dockerfile                                                                                          0.0s 
+ => => transferring dockerfile: 651B                                                                                                                       0.0s 
+ => [vlm-service internal] load build definition from Dockerfile                                                                                           0.0s 
+ => => transferring dockerfile: 248B                                                                                                                       0.0s 
+ => [frontend internal] load build definition from Dockerfile                                                                                              0.0s 
+ => => transferring dockerfile: 491B                                                                                                                       0.0s 
+ => [yolo-service internal] load metadata for docker.io/library/python:3.11-slim                                                                           2.5s 
+ => [auth] library/python:pull token for registry-1.docker.io                                                                                              0.0s 
+ => [vlm-service internal] load .dockerignore                                                                                                              0.0s 
+ => => transferring context: 2B                                                                                                                            0.0s 
+ => [frontend internal] load .dockerignore                                                                                                                 0.0s
+ => => transferring context: 2B                                                                                                                            0.0s
+ => [yolo-service internal] load .dockerignore                                                                                                             0.0s
+ => => transferring context: 2B                                                                                                                            0.0s
+ => CACHED [yolo-service 1/5] FROM docker.io/library/python:3.11-slim@sha256:c8271b1f627d0068857dce5b53e14a9558603b527e46f1f901722f935b786a39              0.0s
+ => [vlm-service internal] load build context                                                                                                              0.0s
+ => => transferring context: 1.87kB                                                                                                                        0.0s
+ => [vlm-service 2/5] WORKDIR /app                                                                                                                         0.1s
+ => [frontend internal] load build context                                                                                                                 0.0s
+ => => transferring context: 63B                                                                                                                           0.0s
+ => [yolo-service internal] load build context                                                                                                             0.0s
+ => => transferring context: 93B                                                                                                                           0.0s
+ => CACHED [frontend 2/6] RUN apt-get update && apt-get install -y     libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1     && rm -rf /var/lib/apt/li  0.0s
+ => CACHED [frontend 3/6] WORKDIR /app                                                                                                                     0.0s
+ => CACHED [frontend 4/6] COPY requirements.txt .                                                                                                          0.0s
+ => CACHED [frontend 5/6] RUN pip install --no-cache-dir -r requirements.txt                                                                               0.0s
+ => CACHED [frontend 6/6] COPY app.py .                                                                                                                    0.0s
+ => CACHED [yolo-service 2/8] RUN apt-get update && apt-get install -y     libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1     libgl1     && rm -rf   0.0s
+ => CACHED [yolo-service 3/8] WORKDIR /app                                                                                                                 0.0s
+ => CACHED [yolo-service 4/8] COPY requirements.txt .                                                                                                      0.0s
+ => CACHED [yolo-service 5/8] RUN pip install --no-cache-dir     torch torchvision     --index-url https://download.pytorch.org/whl/cpu                    0.0s
+ => CACHED [yolo-service 6/8] RUN pip install --no-cache-dir -r requirements.txt                                                                           0.0s
+ => CACHED [yolo-service 7/8] COPY best.pt .                                                                                                               0.0s
+ => CACHED [yolo-service 8/8] COPY main.py .                                                                                                               0.0s
+ => [yolo-service] exporting to image                                                                                                                      0.0s
+ => => exporting layers                                                                                                                                    0.0s
+ => => writing image sha256:6731ae6b8d20ff8d9019d439947d339af68f7fe91568ef3d2682a715ee1f3587                                                               0.0s
+ => => naming to docker.io/library/mid-demo-vision-system-yolo-service                                                                                     0.0s
+ => [frontend] exporting to image                                                                                                                          0.0s
+ => => exporting layers                                                                                                                                    0.0s
+ => => writing image sha256:7b94875a8a48c7a81078ffd3f8ccffb8a83565f60b048e11b96be053cf2d295e                                                               0.0s
+ => => naming to docker.io/library/mid-demo-vision-system-frontend                                                                                         0.0s
+ => [vlm-service 3/5] COPY requirements.txt .                                                                                                              0.1s
+ => [vlm-service 4/5] RUN pip install --no-cache-dir -r requirements.txt                                                                                  42.0s
+ => [yolo-service] resolving provenance for metadata file                                                                                                  0.0s
+ => [frontend] resolving provenance for metadata file                                                                                                      0.0s
+ => [vlm-service 5/5] COPY main.py .                                                                                                                       0.0s
+ => [vlm-service] exporting to image                                                                                                                       0.9s
+ => => exporting layers                                                                                                                                    0.9s
+ => => writing image sha256:79b678569d6678d9d3e6842a75f38462b29b0ef0cebc79cac742161c5e3b762c                                                               0.0s
+ => => naming to docker.io/library/mid-demo-vision-system-vlm-service                                                                                      0.0s
+ => [vlm-service] resolving provenance for metadata file                                                                                                   0.0s
+[+] Running 6/6
+ ✔ mid-demo-vision-system-vlm-service   Built                                                                                                              0.0s 
+ ✔ mid-demo-vision-system-yolo-service  Built                                                                                                              0.0s 
+ ✔ mid-demo-vision-system-frontend      Built                                                                                                              0.0s 
+ ✔ Container firewatch-yolo             Created                                                                                                            0.1s 
+ ✔ Container firewatch-vlm              Created                                                                                                            0.1s 
+ ✔ Container firewatch-frontend         Created                                                                                                            0.1s 
+Attaching to firewatch-frontend, firewatch-vlm, firewatch-yolo
+firewatch-frontend  | 
+firewatch-frontend  |   You can now view your Streamlit app in your browser.
+firewatch-frontend  | 
+firewatch-frontend  |   Local URL: http://localhost:3000
+firewatch-frontend  |   Network URL: http://172.18.0.4:3000
+firewatch-frontend  |   External URL: http://112.135.71.22:3000
+firewatch-frontend  | 
+firewatch-vlm       | INFO:main:VLM LLM initialised.
+firewatch-vlm       | INFO:     Started server process [1]
+firewatch-vlm       | INFO:     Waiting for application startup.
+firewatch-vlm       | INFO:     Application startup complete.
+firewatch-vlm       | INFO:     Uvicorn running on http://0.0.0.0:8019 (Press CTRL+C to quit)
+firewatch-yolo      | WARNING ⚠️ user config directory '/root/.config/Ultralytics' is not writable, using '/tmp/Ultralytics'. Set YOLO_CONFIG_DIR to override.
+firewatch-yolo      | Creating new Ultralytics Settings v0.0.6 file ✅ 
+firewatch-yolo      | View Ultralytics Settings with 'yolo settings' or at '/tmp/Ultralytics/settings.json'
+firewatch-yolo      | Update Settings with 'yolo settings key=value', i.e. 'yolo settings runs_dir=path/to/dir'. For help see https://docs.ultralytics.com/quickstart/#ultralytics-settings.
+firewatch-yolo      | INFO:     Started server process [1]
+firewatch-yolo      | INFO:     Waiting for application startup.
+firewatch-yolo      | INFO:     Application startup complete.
+firewatch-yolo      | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+firewatch-yolo      | [YOLO] Model loaded. Classes: {0: 'fire', 1: 'smoke'}
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 624.4ms
+firewatch-yolo      | Speed: 29.6ms preprocess, 624.4ms inference, 18.8ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47684 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 280.5ms
+firewatch-yolo      | Speed: 5.5ms preprocess, 280.5ms inference, 1.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47694 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 305.1ms
+firewatch-yolo      | Speed: 37.6ms preprocess, 305.1ms inference, 0.7ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47696 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 176.7ms
+firewatch-yolo      | Speed: 11.8ms preprocess, 176.7ms inference, 7.3ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47708 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 275.8ms
+firewatch-yolo      | Speed: 27.4ms preprocess, 275.8ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41650 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 736.1ms
+firewatch-yolo      | Speed: 2.6ms preprocess, 736.1ms inference, 0.7ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41656 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 590.5ms
+firewatch-yolo      | Speed: 148.3ms preprocess, 590.5ms inference, 0.7ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41672 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 198.0ms
+firewatch-yolo      | Speed: 1.5ms preprocess, 198.0ms inference, 1.3ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41684 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 180.1ms
+firewatch-yolo      | Speed: 4.0ms preprocess, 180.1ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41692 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 194.0ms
+firewatch-yolo      | Speed: 3.0ms preprocess, 194.0ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41698 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 121.7ms
+firewatch-yolo      | Speed: 1.7ms preprocess, 121.7ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41708 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 127.6ms
+firewatch-yolo      | Speed: 2.1ms preprocess, 127.6ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41720 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 116.6ms
+firewatch-yolo      | Speed: 1.6ms preprocess, 116.6ms inference, 0.7ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41722 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 130.1ms
+firewatch-yolo      | Speed: 2.1ms preprocess, 130.1ms inference, 1.1ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41730 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 117.9ms
+firewatch-yolo      | Speed: 2.1ms preprocess, 117.9ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41738 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 137.6ms
+firewatch-yolo      | Speed: 1.2ms preprocess, 137.6ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41746 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 98.7ms
+firewatch-yolo      | Speed: 1.5ms preprocess, 98.7ms inference, 0.7ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41750 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 104.3ms
+firewatch-yolo      | Speed: 1.5ms preprocess, 104.3ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41760 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 109.4ms
+firewatch-yolo      | Speed: 2.6ms preprocess, 109.4ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41762 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 102.7ms
+firewatch-yolo      | Speed: 3.9ms preprocess, 102.7ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41770 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 102.3ms
+firewatch-yolo      | Speed: 2.4ms preprocess, 102.3ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41774 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 94.9ms
+firewatch-yolo      | Speed: 2.4ms preprocess, 94.9ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41782 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 92.2ms
+firewatch-yolo      | Speed: 2.8ms preprocess, 92.2ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:41786 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 146.1ms
+firewatch-yolo      | Speed: 2.2ms preprocess, 146.1ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51174 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 137.6ms
+firewatch-yolo      | Speed: 2.0ms preprocess, 137.6ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51180 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 123.3ms
+firewatch-yolo      | Speed: 1.7ms preprocess, 123.3ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51184 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 94.6ms
+firewatch-yolo      | Speed: 1.5ms preprocess, 94.6ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51192 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 smokes, 106.2ms
+firewatch-yolo      | Speed: 1.9ms preprocess, 106.2ms inference, 15.2ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51206 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 1 smoke, 101.8ms
+firewatch-yolo      | Speed: 1.5ms preprocess, 101.8ms inference, 1.0ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51216 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 1 fire, 1 smoke, 115.3ms
+firewatch-yolo      | Speed: 4.5ms preprocess, 115.3ms inference, 1.0ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51226 - "POST /detect HTTP/1.1" 200 OK
+firewatch-vlm       | INFO:google_genai.models:AFC is enabled with max remote calls: 10.
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 1 fire, 93.1ms
+firewatch-yolo      | Speed: 1.5ms preprocess, 93.1ms inference, 0.7ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51232 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 1 fire, 160.0ms
+firewatch-yolo      | Speed: 1.9ms preprocess, 160.0ms inference, 0.9ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51236 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 1 fire, 140.7ms
+firewatch-yolo      | Speed: 1.8ms preprocess, 140.7ms inference, 0.8ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51244 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 93.3ms
+firewatch-yolo      | Speed: 2.5ms preprocess, 93.3ms inference, 0.8ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51256 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 96.4ms
+firewatch-yolo      | Speed: 1.6ms preprocess, 96.4ms inference, 0.7ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51260 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 3 fires, 77.8ms
+firewatch-yolo      | Speed: 1.9ms preprocess, 77.8ms inference, 0.8ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51274 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 106.8ms
+firewatch-yolo      | Speed: 2.0ms preprocess, 106.8ms inference, 2.0ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51276 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 1 fire, 96.8ms
+firewatch-yolo      | Speed: 2.9ms preprocess, 96.8ms inference, 1.0ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51290 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 210.0ms
+firewatch-yolo      | Speed: 1.8ms preprocess, 210.0ms inference, 0.8ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51306 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 1 fire, 96.3ms
+firewatch-yolo      | Speed: 2.1ms preprocess, 96.3ms inference, 0.7ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51314 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 1 fire, 109.6ms
+firewatch-yolo      | Speed: 3.1ms preprocess, 109.6ms inference, 1.3ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51324 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 3 fires, 149.5ms
+firewatch-yolo      | Speed: 1.9ms preprocess, 149.5ms inference, 2.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:51340 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 132.3ms
+firewatch-yolo      | Speed: 1.6ms preprocess, 132.3ms inference, 1.1ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47282 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 126.1ms
+firewatch-yolo      | Speed: 1.8ms preprocess, 126.1ms inference, 0.7ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47288 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 111.3ms
+firewatch-yolo      | Speed: 2.6ms preprocess, 111.3ms inference, 0.8ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47294 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 121.5ms
+firewatch-yolo      | Speed: 2.3ms preprocess, 121.5ms inference, 0.8ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47296 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 126.9ms
+firewatch-yolo      | Speed: 1.7ms preprocess, 126.9ms inference, 1.3ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47308 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 134.6ms
+firewatch-yolo      | Speed: 1.8ms preprocess, 134.6ms inference, 1.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47316 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 167.7ms
+firewatch-yolo      | Speed: 1.9ms preprocess, 167.7ms inference, 1.3ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47326 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 108.7ms
+firewatch-yolo      | Speed: 1.9ms preprocess, 108.7ms inference, 30.3ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47340 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 3 fires, 323.2ms
+firewatch-yolo      | Speed: 4.3ms preprocess, 323.2ms inference, 0.9ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47350 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 238.7ms
+firewatch-yolo      | Speed: 4.0ms preprocess, 238.7ms inference, 0.8ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47354 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 1 fire, 99.5ms
+firewatch-yolo      | Speed: 3.4ms preprocess, 99.5ms inference, 0.7ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47358 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-vlm       | INFO:httpx:HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+firewatch-vlm       | INFO:     172.18.0.4:38580 - "POST /describe-image/ HTTP/1.1" 200 OK
+firewatch-vlm       | INFO:google_genai.models:AFC is enabled with max remote calls: 10.
+firewatch-yolo      | 0: 480x640 3 fires, 520.9ms
+firewatch-yolo      | Speed: 13.9ms preprocess, 520.9ms inference, 2.7ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47364 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 3 fires, 245.6ms
+firewatch-yolo      | Speed: 6.7ms preprocess, 245.6ms inference, 2.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47380 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 206.6ms
+firewatch-yolo      | Speed: 6.8ms preprocess, 206.6ms inference, 3.3ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47384 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 4 fires, 167.6ms
+firewatch-yolo      | Speed: 1.7ms preprocess, 167.6ms inference, 1.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47392 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 2 fires, 248.2ms
+firewatch-yolo      | Speed: 3.8ms preprocess, 248.2ms inference, 10.0ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47394 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 3 fires, 578.4ms
+firewatch-yolo      | Speed: 7.6ms preprocess, 578.4ms inference, 0.7ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47404 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 3 fires, 184.7ms
+firewatch-yolo      | Speed: 7.8ms preprocess, 184.7ms inference, 0.9ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47406 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 3 fires, 174.1ms
+firewatch-yolo      | Speed: 2.4ms preprocess, 174.1ms inference, 1.1ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:47416 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 4 fires, 176.2ms
+firewatch-yolo      | Speed: 3.2ms preprocess, 176.2ms inference, 0.9ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43348 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 1 fire, 172.3ms
+firewatch-yolo      | Speed: 3.0ms preprocess, 172.3ms inference, 3.1ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43360 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 171.5ms
+firewatch-yolo      | Speed: 3.0ms preprocess, 171.5ms inference, 1.0ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43370 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 166.9ms
+firewatch-yolo      | Speed: 3.1ms preprocess, 166.9ms inference, 0.7ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43382 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 185.5ms
+firewatch-yolo      | Speed: 3.4ms preprocess, 185.5ms inference, 0.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43390 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 196.4ms
+firewatch-yolo      | Speed: 2.6ms preprocess, 196.4ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43396 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 163.3ms
+firewatch-yolo      | Speed: 3.7ms preprocess, 163.3ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43408 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 160.3ms
+firewatch-yolo      | Speed: 3.5ms preprocess, 160.3ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43416 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 127.8ms
+firewatch-yolo      | Speed: 4.1ms preprocess, 127.8ms inference, 1.0ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43420 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 271.7ms
+firewatch-yolo      | Speed: 2.7ms preprocess, 271.7ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43422 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 169.5ms
+firewatch-yolo      | Speed: 2.3ms preprocess, 169.5ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43428 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 321.6ms
+firewatch-yolo      | Speed: 2.0ms preprocess, 321.6ms inference, 0.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43442 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 127.4ms
+firewatch-yolo      | Speed: 1.9ms preprocess, 127.4ms inference, 0.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43444 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 169.9ms
+firewatch-yolo      | Speed: 2.7ms preprocess, 169.9ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43454 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 126.5ms
+firewatch-yolo      | Speed: 3.5ms preprocess, 126.5ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43464 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 1 smoke, 145.2ms
+firewatch-yolo      | Speed: 3.1ms preprocess, 145.2ms inference, 1.2ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43472 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 141.6ms
+firewatch-yolo      | Speed: 1.7ms preprocess, 141.6ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43474 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 1 smoke, 138.5ms
+firewatch-yolo      | Speed: 2.8ms preprocess, 138.5ms inference, 0.8ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43490 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 1 smoke, 210.9ms
+firewatch-yolo      | Speed: 2.3ms preprocess, 210.9ms inference, 3.9ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:43502 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-vlm       | INFO:httpx:HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+firewatch-vlm       | INFO:     172.18.0.4:55368 - "POST /describe-image/ HTTP/1.1" 200 OK
+firewatch-vlm       | INFO:google_genai.models:AFC is enabled with max remote calls: 10.
+firewatch-yolo      | 0: 480x640 (no detections), 390.6ms
+firewatch-yolo      | Speed: 3.0ms preprocess, 390.6ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46028 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 127.9ms
+firewatch-yolo      | Speed: 5.1ms preprocess, 127.9ms inference, 3.9ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46040 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 191.6ms
+firewatch-yolo      | Speed: 8.3ms preprocess, 191.6ms inference, 3.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46042 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 167.2ms
+firewatch-yolo      | Speed: 4.0ms preprocess, 167.2ms inference, 0.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46048 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 253.7ms
+firewatch-yolo      | Speed: 2.9ms preprocess, 253.7ms inference, 0.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46064 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 187.7ms
+firewatch-yolo      | Speed: 3.6ms preprocess, 187.7ms inference, 0.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46068 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 218.7ms
+firewatch-yolo      | Speed: 3.1ms preprocess, 218.7ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46076 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 153.5ms
+firewatch-yolo      | Speed: 3.9ms preprocess, 153.5ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46088 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 169.0ms
+firewatch-yolo      | Speed: 3.9ms preprocess, 169.0ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46092 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 165.2ms
+firewatch-yolo      | Speed: 3.4ms preprocess, 165.2ms inference, 1.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46102 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 192.4ms
+firewatch-yolo      | Speed: 2.7ms preprocess, 192.4ms inference, 0.7ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46112 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 178.1ms
+firewatch-yolo      | Speed: 1.6ms preprocess, 178.1ms inference, 0.8ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46126 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 203.0ms
+firewatch-yolo      | Speed: 4.3ms preprocess, 203.0ms inference, 0.8ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46142 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 162.7ms
+firewatch-yolo      | Speed: 1.3ms preprocess, 162.7ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46156 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 174.4ms
+firewatch-yolo      | Speed: 1.6ms preprocess, 174.4ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46170 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 200.8ms
+firewatch-yolo      | Speed: 1.9ms preprocess, 200.8ms inference, 1.9ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46176 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 195.5ms
+firewatch-yolo      | Speed: 2.9ms preprocess, 195.5ms inference, 1.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46188 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 209.9ms
+firewatch-yolo      | Speed: 1.9ms preprocess, 209.9ms inference, 2.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46200 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 201.0ms
+firewatch-yolo      | Speed: 1.8ms preprocess, 201.0ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46212 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 288.6ms
+firewatch-yolo      | Speed: 2.3ms preprocess, 288.6ms inference, 0.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:46218 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 288.4ms
+firewatch-yolo      | Speed: 2.3ms preprocess, 288.4ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:44178 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 153.4ms
+firewatch-yolo      | Speed: 4.5ms preprocess, 153.4ms inference, 0.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:44186 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 167.0ms
+firewatch-yolo      | Speed: 2.8ms preprocess, 167.0ms inference, 0.4ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:44194 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 197.9ms
+firewatch-yolo      | Speed: 1.5ms preprocess, 197.9ms inference, 0.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:44198 - "POST /detect HTTP/1.1" 200 OK
+firewatch-vlm       | INFO:httpx:HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+firewatch-vlm       | INFO:     172.18.0.4:57562 - "POST /describe-image/ HTTP/1.1" 200 OK
+firewatch-vlm       | INFO:google_genai.models:AFC is enabled with max remote calls: 10.
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 200.9ms
+firewatch-yolo      | Speed: 1.5ms preprocess, 200.9ms inference, 2.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:44214 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 368.2ms
+firewatch-yolo      | Speed: 1.5ms preprocess, 368.2ms inference, 0.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:44226 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 210.5ms
+firewatch-yolo      | Speed: 2.3ms preprocess, 210.5ms inference, 5.5ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:44232 - "POST /detect HTTP/1.1" 200 OK
+firewatch-yolo      | 
+firewatch-yolo      | 0: 480x640 (no detections), 249.1ms
+firewatch-yolo      | Speed: 32.4ms preprocess, 249.1ms inference, 0.6ms postprocess per image at shape (1, 3, 480, 640)
+firewatch-yolo      | INFO:     172.18.0.4:44246 - "POST /detect HTTP/1.1" 200 OK
+firewatch-vlm       | INFO:httpx:HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+firewatch-vlm       | INFO:     172.18.0.4:50346 - "POST /describe-image/ HTTP/1.1" 200 OK
+v View in Docker Desktop   o View Config   w Enable Watch
