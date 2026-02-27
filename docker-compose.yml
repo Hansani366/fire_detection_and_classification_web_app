@@ -1,0 +1,25 @@
+version: "3.9"
+
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  api:
+    build: ./api-gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      - yolo
+      - vlm
+
+  yolo:
+    build: ./yolo-service
+    restart: unless-stopped
+
+  vlm:
+    build: ./vlm-service
+    restart: unless-stopped
