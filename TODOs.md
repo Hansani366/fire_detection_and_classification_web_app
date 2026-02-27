@@ -1,2 +1,0 @@
-- fire alarm triggers even if there is no fire keywords in the given text by gemini. fix it
-- sometimes fire detections are not shown by yolo after audio alarm logic addding. fix it
