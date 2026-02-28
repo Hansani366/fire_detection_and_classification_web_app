@@ -10,9 +10,10 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-YOLO_URL   = os.getenv("YOLO_URL",   "http://yolo-service:8000/detect")
-GEMINI_URL = os.getenv("GEMINI_URL", "http://vlm-service:8019/describe-image/")
-TIMEOUT    = float(os.getenv("PROXY_TIMEOUT", "15"))
+YOLO_URL    = os.getenv("YOLO_URL",    "http://yolo-service:8000/detect")
+GEMINI_URL  = os.getenv("GEMINI_URL",  "http://vlm-service:8019/describe-image/")
+YOLO_TIMEOUT = float(os.getenv("YOLO_TIMEOUT",   "10"))   # YOLO is fast
+VLM_TIMEOUT  = float(os.getenv("VLM_TIMEOUT",    "60"))   # Gemini can be slow
 
 app = FastAPI(title="FireWatch AI")
 
@@ -31,27 +32,32 @@ async def proxy_detect(file: UploadFile = File(...)):
     """Forward a JPEG frame to the YOLO service and return its JSON."""
     data = await file.read()
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=YOLO_TIMEOUT) as client:
             resp = await client.post(
                 YOLO_URL,
                 files={"file": ("frame.jpg", data, "image/jpeg")},
             )
         return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="YOLO service timed out")
     except httpx.RequestError as exc:
         raise HTTPException(status_code=502, detail=f"YOLO service unreachable: {exc}")
 
 
 @app.post("/api/describe")
 async def proxy_describe(file: UploadFile = File(...)):
-    """Forward a JPEG frame to the VLM service and return its JSON."""
+    """Forward a JPEG frame to the VLM/Gemini service and return its JSON.
+    Uses a longer timeout since Gemini API calls can take 20-40s."""
     data = await file.read()
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=VLM_TIMEOUT) as client:
             resp = await client.post(
                 GEMINI_URL,
                 files={"file": ("frame.jpg", data, "image/jpeg")},
             )
         return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="VLM service timed out")
     except httpx.RequestError as exc:
         raise HTTPException(status_code=502, detail=f"VLM service unreachable: {exc}")
 
