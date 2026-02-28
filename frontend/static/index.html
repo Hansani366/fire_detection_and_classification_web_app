@@ -26,9 +26,6 @@
   --sans: 'Rajdhani', sans-serif;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   BASE
-═══════════════════════════════════════════════════════════ */
 html, body {
   background: var(--bg);
   background: radial-gradient(ellipse at 20% 0%, #1c0900 0%, #0a0a0f 55%);
@@ -38,9 +35,6 @@ html, body {
   overflow-x: hidden;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   LAYOUT
-═══════════════════════════════════════════════════════════ */
 .wrapper {
   max-width: 1400px;
   margin: 0 auto;
@@ -194,12 +188,17 @@ html, body {
   object-fit: cover;
   display: block;
 }
+
+/* ── FIX 1: canvas must match the container size in CSS
+      and use internal resolution = container size too.
+      We do NOT use object-fit on the canvas — it sits
+      on top pixel-perfectly and we scale coords ourselves. ── */
 #overlay-canvas {
   position: absolute;
-  inset: 0;
-  width: 100%; height: 100%;
+  top: 0; left: 0;
   pointer-events: none;
-  z-index: 2;
+  z-index: 6;
+  /* width/height set by syncSize() in JS */
 }
 
 /* HUD corner brackets */
@@ -398,8 +397,8 @@ button:disabled {
   border-radius: 50%;
   flex-shrink: 0;
 }
-.svc-dot.ok  { background: #22cc88; box-shadow: 0 0 6px #22cc8866; }
-.svc-dot.err { background: var(--fire); box-shadow: 0 0 6px #ff4b2b66; animation: blink .9s step-start infinite; }
+.svc-dot.ok   { background: #22cc88; box-shadow: 0 0 6px #22cc8866; }
+.svc-dot.err  { background: var(--fire); box-shadow: 0 0 6px #ff4b2b66; animation: blink .9s step-start infinite; }
 .svc-dot.idle { background: #333; }
 </style>
 </head>
@@ -412,13 +411,12 @@ button:disabled {
       <div class="fw-logo">🔥 FIREWATCH</div>
       <div class="fw-subtitle">AI-Powered Smoke &amp; Fire Detection System</div>
     </div>
-    <div class="fw-version">v2.0 · HTML/JS</div>
+    <div class="fw-version">v2.1 · HTML/JS</div>
   </div>
 
   <!-- ── Alarm banner ── -->
   <div id="alarm-banner" class="nominal">● &nbsp; SYSTEM NOMINAL</div>
 
-  <!-- Hidden audio – loaded lazily, played via JS -->
   <audio id="alarm-audio" loop preload="none">
     <source src="/fire_alarm.mp3" type="audio/mpeg" />
   </audio>
@@ -431,24 +429,18 @@ button:disabled {
       <div class="card-title">Live Camera Feed</div>
 
       <div class="cam-wrap" id="cam-wrap">
-        <!-- Video element -->
         <video id="preview-video" autoplay muted playsinline></video>
-
-        <!-- Canvas for bounding-box overlay -->
         <canvas id="overlay-canvas"></canvas>
 
-        <!-- HUD corners -->
         <div class="hud-corner hud-tl"></div>
         <div class="hud-corner hud-tr"></div>
         <div class="hud-corner hud-bl"></div>
         <div class="hud-corner hud-br"></div>
 
-        <!-- Recording indicator -->
         <div id="rec-dot">
           <span class="rec-blink"></span>REC
         </div>
 
-        <!-- Offline placeholder -->
         <div id="cam-placeholder">
           <div class="ph-icon">📷</div>
           <span>CAMERA OFFLINE</span>
@@ -456,14 +448,12 @@ button:disabled {
         </div>
       </div>
 
-      <!-- Controls -->
       <div class="cam-controls">
         <button id="btn-start" class="btn-primary">▶ START MONITORING</button>
         <button id="btn-stop"  class="btn-secondary" disabled>■ STOP</button>
         <button id="btn-reset" class="btn-secondary">⟳ RESET ALARM</button>
       </div>
 
-      <!-- Service status pills -->
       <div class="svc-row">
         <div class="svc-pill"><span class="svc-dot idle" id="dot-yolo"></span>YOLO</div>
         <div class="svc-pill"><span class="svc-dot idle" id="dot-vlm"></span>VLM</div>
@@ -473,8 +463,6 @@ button:disabled {
 
     <!-- ── Info column ── -->
     <div>
-
-      <!-- Stats -->
       <div class="fw-card">
         <div class="card-title">System Stats</div>
         <div class="stat-row">
@@ -497,7 +485,6 @@ button:disabled {
         </div>
       </div>
 
-      <!-- Detections -->
       <div class="fw-card">
         <div class="card-title">Current Detections</div>
         <div id="det-container">
@@ -505,17 +492,15 @@ button:disabled {
         </div>
       </div>
 
-      <!-- VLM log -->
       <div class="fw-card">
         <div class="card-title">VLM Scene Analysis</div>
         <div id="vlm-log">
           <span class="log-empty">Waiting for VLM analysis…</span>
         </div>
       </div>
-
-    </div><!-- /info col -->
-  </div><!-- /main-grid -->
-</div><!-- /wrapper -->
+    </div>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -523,72 +508,102 @@ button:disabled {
 /* ═══════════════════════════════════════════════════════════
    CONFIG
 ═══════════════════════════════════════════════════════════ */
-const DETECT_INTERVAL_MS = 500;   // how often to grab a frame and call YOLO
-const MIN_CONF           = 0.5;   // minimum YOLO confidence to count
-const MAX_LOG_ENTRIES    = 12;
+const DETECT_INTERVAL_MS  = 500;   // how often to grab a frame and call YOLO
+const MIN_CONF            = 0.35;  // ← lowered from 0.5 so more detections pass through
+const MAX_LOG_ENTRIES     = 12;
+const DETECTION_HOLD_MS   = 2500;  // keep boxes on screen this long after last YOLO hit
+const VLM_CONFIRM_REQUIRED = true; // set false to alarm on YOLO alone (useful for debugging)
 
 /* ═══════════════════════════════════════════════════════════
    STATE
 ═══════════════════════════════════════════════════════════ */
 const S = {
-  fireAlarm:        false,
-  alarmAudioActive: false,
-  totalDetections:  0,
-  vlmCalls:         0,
-  framesSent:       0,       // for fps counter
-  lastDetections:   [],
-  log:              [],      // [{ts, text}]
-  running:          false,
-  timerId:          null,
-  fpsTimerId:       null,
-  fpsCount:         0,
+  fireAlarm:          false,
+  alarmAudioActive:   false,
+  totalDetections:    0,
+  vlmCalls:           0,
+  lastDetections:     [],
+  log:                [],
+  running:            false,
+  timerId:            null,
+  fpsTimerId:         null,
+  fpsCount:           0,
+  lastDetectionTime:  0,   // FIX 2: timestamp of last YOLO hit — for hold logic
+  pendingVlm:         false,
 };
 
 /* ═══════════════════════════════════════════════════════════
    DOM REFS
 ═══════════════════════════════════════════════════════════ */
-const $  = id => document.getElementById(id);
-const video      = $('preview-video');
-const canvas     = $('overlay-canvas');
-const ctx        = canvas.getContext('2d');
-const placeholder= $('cam-placeholder');
-const recDot     = $('rec-dot');
-const alarmBanner= $('alarm-banner');
-const alarmAudio = $('alarm-audio');
-const btnStart   = $('btn-start');
-const btnStop    = $('btn-stop');
-const btnReset   = $('btn-reset');
-const sDet       = $('s-detections');
-const sVlm       = $('s-vlm');
-const sFps       = $('s-fps');
-const sAlarm     = $('s-alarm');
-const detCont    = $('det-container');
-const vlmLog     = $('vlm-log');
-const dotYolo    = $('dot-yolo');
-const dotVlm     = $('dot-vlm');
-const dotCam     = $('dot-cam');
+const $           = id => document.getElementById(id);
+const video       = $('preview-video');
+const canvas      = $('overlay-canvas');
+const ctx         = canvas.getContext('2d');
+const placeholder = $('cam-placeholder');
+const recDot      = $('rec-dot');
+const alarmBanner = $('alarm-banner');
+const alarmAudio  = $('alarm-audio');
+const btnStart    = $('btn-start');
+const btnStop     = $('btn-stop');
+const btnReset    = $('btn-reset');
+const sDet        = $('s-detections');
+const sVlm        = $('s-vlm');
+const sFps        = $('s-fps');
+const sAlarm      = $('s-alarm');
+const detCont     = $('det-container');
+const vlmLog      = $('vlm-log');
+const dotYolo     = $('dot-yolo');
+const dotVlm      = $('dot-vlm');
+const dotCam      = $('dot-cam');
 
 /* ═══════════════════════════════════════════════════════════
-   OFFSCREEN CANVAS (frame capture)
+   OFFSCREEN CANVAS  (frame capture at native video resolution)
 ═══════════════════════════════════════════════════════════ */
 const offscreen = document.createElement('canvas');
 const offCtx    = offscreen.getContext('2d');
 
+/* ─────────────────────────────────────────────────────────
+   FIX 1 — Canvas sizing & coordinate mapping
+   ─────────────────────────────────────────────────────────
+   Problem: video uses object-fit:cover, which scales+crops the
+   native video frame to fill the container. YOLO receives the
+   full native frame (offscreen canvas), so its bbox coords are
+   in native-video-pixel space. We must map those coords to
+   display-pixel space accounting for the cover scaling.
+
+   Solution:
+     • canvas internal size  = container display size (px)
+     • offscreen canvas size = native video resolution
+     • drawBoxes() computes the object-fit:cover transform and
+       maps native coords → display coords before drawing.
+───────────────────────────────────────────────────────── */
 function syncSize() {
+  const rect = video.getBoundingClientRect();
+  const dw = Math.round(rect.width)  || 640;
+  const dh = Math.round(rect.height) || 360;
+
+  // Canvas drawn at display resolution (1:1 with screen pixels)
+  if (canvas.width !== dw || canvas.height !== dh) {
+    canvas.width  = dw;
+    canvas.height = dh;
+  }
+  canvas.style.width  = dw + 'px';
+  canvas.style.height = dh + 'px';
+
+  // Offscreen at native video resolution (what YOLO gets)
   const vw = video.videoWidth  || 640;
   const vh = video.videoHeight || 480;
+  offscreen.width  = vw;
+  offscreen.height = vh;
+}
 
-  // Internal resolution must match what we send to YOLO
-  canvas.width  = offscreen.width  = vw;
-  canvas.height = offscreen.height = vh;
-
-  // CSS size must match the video's rendered size so the canvas overlay
-  // sits pixel-perfectly over the video display (handles object-fit scaling)
-  const rect = video.getBoundingClientRect();
-  if (rect.width > 0) {
-    canvas.style.width  = rect.width  + 'px';
-    canvas.style.height = rect.height + 'px';
-  }
+/* Compute object-fit:cover scale + offset for a given
+   native size → display size mapping.                    */
+function coverTransform(nativeW, nativeH, displayW, displayH) {
+  const scale   = Math.max(displayW / nativeW, displayH / nativeH);
+  const offsetX = (displayW - nativeW * scale) / 2;
+  const offsetY = (displayH - nativeH * scale) / 2;
+  return { scale, offsetX, offsetY };
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -601,6 +616,8 @@ async function startCamera() {
     stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
     video.srcObject = stream;
     await new Promise(res => video.addEventListener('loadedmetadata', res, { once: true }));
+    // Let the video render one frame so getBoundingClientRect is valid
+    await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
     syncSize();
 
     placeholder.style.display = 'none';
@@ -664,14 +681,6 @@ async function callVlm(blob) {
 function startLoop() {
   if (S.running) return;
   S.running = true;
-
-  // FPS counter – counts frames sent per minute
-  S.fpsTimerId = setInterval(() => {
-    sFps.textContent = S.fpsCount * (60_000 / (DETECT_INTERVAL_MS * 60));
-    // simpler: just report how many fired in last ~5s, annualised
-    S.fpsCount = 0;
-  }, 5000);
-
   S.timerId = setInterval(runDetection, DETECT_INTERVAL_MS);
 }
 
@@ -697,139 +706,73 @@ async function runDetection() {
   } catch (e) {
     dotYolo.className = 'svc-dot err';
     console.warn('[YOLO]', e.message);
-    // treat as empty detections → alarm off
   }
 
-  drawBoxes(dets);
-  S.lastDetections = dets;
-
   if (dets.length > 0) {
-    S.totalDetections += dets.length;
-    S.vlmCalls++;
+    /* ── YOLO fired: update hold timer, draw boxes immediately ── */
+    S.lastDetectionTime = Date.now();   // FIX 2: stamp the hit
+    S.lastDetections    = dets;
+    S.totalDetections  += dets.length;
+    drawBoxes(dets);
 
-    /* ── VLM (only when YOLO fires) ── */
-    let vlm = null;
-    try {
-      const blob2 = await captureBlob(0.72);
-      vlm = await callVlm(blob2);
-      dotVlm.className = 'svc-dot ok';
-    } catch (e) {
-      dotVlm.className = 'svc-dot err';
-      const ts = nowHMS();
-      S.log.push({ ts, text: `[vlm error: ${e.message}]` });
-      console.warn('[VLM]', e.message);
-    }
+    /* ── VLM confirmation (non-blocking — fire and forget) ── */
+    if (!S.pendingVlm) {
+      S.pendingVlm = true;
+      S.vlmCalls++;
+      captureBlob(0.72).then(blob2 => callVlm(blob2))
+        .then(vlm => {
+          dotVlm.className = 'svc-dot ok';
+          const logText = vlm.detected
+            ? (vlm.description || `Fire/smoke confirmed: ${vlm.type}`)
+            : `[VLM: no threat — ${vlm.type ?? 'unknown'}]`;
+          S.log.push({ ts: nowHMS(), text: logText });
 
-    if (vlm !== null) {
-      const logText = vlm.detected
-        ? vlm.description
-        : `[no fire/smoke — ${vlm.type ?? 'unknown'}]`;
-      S.log.push({ ts: nowHMS(), text: logText });
-      setAlarm(dets, vlm);
-    } else {
-      setAlarm([], null);          // VLM failed → no confirmation → off
+          /* ── ALARM: YOLO + VLM must both agree ── */
+          if (VLM_CONFIRM_REQUIRED) {
+            S.fireAlarm = vlm.detected === true;
+          } else {
+            S.fireAlarm = true; // YOLO alone
+          }
+
+          render();
+        })
+        .catch(e => {
+          dotVlm.className = 'svc-dot err';
+          S.log.push({ ts: nowHMS(), text: `[vlm error: ${e.message}]` });
+          console.warn('[VLM]', e.message);
+          // FIX 3: VLM failure does NOT clear the alarm or boxes.
+          // The hold timer will expire naturally.
+          render();
+        })
+        .finally(() => { S.pendingVlm = false; });
     }
 
   } else {
-    /* YOLO sees nothing → unconditional off */
-    S.lastDetections = [];
-    S.fireAlarm = false;
+    /* ── YOLO sees nothing ──
+       FIX 2: Don't instantly clear. Wait DETECTION_HOLD_MS
+       so boxes stay visible across brief missed frames.      */
+    const age = Date.now() - S.lastDetectionTime;
+    if (age > DETECTION_HOLD_MS) {
+      S.lastDetections = [];
+      S.fireAlarm      = false;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    // else: keep existing boxes on screen
   }
 
   render();
 }
 
 /* ═══════════════════════════════════════════════════════════
-   ALARM LOGIC  (VLM is sole authority)
+   ALARM AUDIO
 ═══════════════════════════════════════════════════════════ */
-function setAlarm(dets, vlm) {
-  const confirmed = dets.length > 0 && vlm !== null && vlm.detected === true;
-  S.fireAlarm = confirmed;
-  if (!confirmed) {
-    // Immediately stop audio here — don't wait for renderAudio
-    alarmAudio.pause();
-    alarmAudio.currentTime = 0;
-    S.alarmAudioActive = false;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════
-   BOUNDING BOXES
-═══════════════════════════════════════════════════════════ */
-function drawBoxes(dets) {
-  // Canvas internal resolution = video native resolution (set in syncSize)
-  // Canvas CSS display size = whatever the element renders at on screen
-  // We must draw in canvas-pixel space, which equals video-pixel space — correct.
-  // BUT the canvas CSS width/height must also be set so it doesn't stretch.
-  // We handle this by keeping canvas width/height = videoWidth/videoHeight
-  // and letting CSS object-fit handle the video. The canvas sits on top with
-  // width:100% height:100% — so we need to scale our draw coords to match
-  // the canvas's *internal* resolution, which already equals video resolution.
-  // No extra scaling needed as long as syncSize() keeps them in sync.
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!dets.length) return;
-
-  // YOLO returns coords relative to the image it received (offscreen canvas),
-  // which is the same size as the video. Canvas internal size matches too.
-  // So coords are already in the right space — just draw them directly.
-  for (const d of dets) {
-    const [x1, y1, x2, y2] = d.box;
-    const w = x2 - x1, h = y2 - y1;
-    const label = `${d.label} ${(d.confidence * 100).toFixed(0)}%`;
-
-    // Glow effect
-    ctx.shadowColor = '#ff4b2b';
-    ctx.shadowBlur = 12;
-
-    // Box
-    ctx.strokeStyle = '#ff4b2b';
-    ctx.lineWidth = 2.5;
-    ctx.strokeRect(x1, y1, w, h);
-
-    ctx.shadowBlur = 0;
-
-    // Label background
-    ctx.font = 'bold 13px "Share Tech Mono", monospace';
-    const tw = ctx.measureText(label).width;
-    ctx.fillStyle = '#ff4b2bdd';
-    ctx.fillRect(x1, y1 - 24, tw + 12, 22);
-
-    // Label text
-    ctx.fillStyle = '#fff';
-    ctx.fillText(label, x1 + 6, y1 - 7);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════
-   RENDER
-═══════════════════════════════════════════════════════════ */
-function render() {
-  renderBanner();
-  renderAudio();
-  renderStats();
-  renderDetections();
-  renderLog();
-}
-
-function renderBanner() {
-  if (S.fireAlarm) {
-    alarmBanner.className = 'active';
-    alarmBanner.innerHTML = '🚨 &nbsp; FIRE ALARM ACTIVE &nbsp; 🚨';
-  } else {
-    alarmBanner.className = 'nominal';
-    alarmBanner.innerHTML = '● &nbsp; SYSTEM NOMINAL';
-  }
-}
-
-function renderAudio() {
+function syncAudio() {
   if (S.fireAlarm) {
     if (!S.alarmAudioActive) {
       alarmAudio.play().catch(() => {});
       S.alarmAudioActive = true;
     }
   } else {
-    // Always pause when alarm is off — covers all code paths
     if (!alarmAudio.paused) {
       alarmAudio.pause();
       alarmAudio.currentTime = 0;
@@ -838,56 +781,129 @@ function renderAudio() {
   }
 }
 
-function renderStats() {
-  sDet.textContent   = S.totalDetections;
-  sVlm.textContent   = S.vlmCalls;
-  sAlarm.textContent = S.fireAlarm ? '🔴' : '🟢';
-  // fps updated separately via interval
-}
+/* ═══════════════════════════════════════════════════════════
+   FIX 1 — BOUNDING BOXES with proper coordinate mapping
+═══════════════════════════════════════════════════════════ */
+function drawBoxes(dets) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!dets.length) return;
 
-function renderDetections() {
-  if (!S.lastDetections.length) {
-    detCont.innerHTML = '<span class="no-threat">No threats detected</span>';
-    return;
+  // Native video resolution (what YOLO processed)
+  const nativeW = offscreen.width;
+  const nativeH = offscreen.height;
+  // Display resolution (canvas internal size)
+  const dispW   = canvas.width;
+  const dispH   = canvas.height;
+
+  // Get the cover transform that maps native → display coords
+  const { scale, offsetX, offsetY } = coverTransform(nativeW, nativeH, dispW, dispH);
+
+  for (const d of dets) {
+    // Map YOLO native-pixel coords → display-pixel coords
+    let [x1, y1, x2, y2] = d.box;
+    x1 = x1 * scale + offsetX;
+    y1 = y1 * scale + offsetY;
+    x2 = x2 * scale + offsetX;
+    y2 = y2 * scale + offsetY;
+
+    // Clamp to canvas bounds
+    x1 = Math.max(0, x1); y1 = Math.max(0, y1);
+    x2 = Math.min(dispW, x2); y2 = Math.min(dispH, y2);
+
+    const w = x2 - x1, h = y2 - y1;
+    if (w < 2 || h < 2) continue; // skip degenerate boxes
+
+    const label = `${d.label} ${(d.confidence * 100).toFixed(0)}%`;
+
+    // Glow + box
+    ctx.shadowColor = '#ff4b2b';
+    ctx.shadowBlur  = 14;
+    ctx.strokeStyle = '#ff4b2b';
+    ctx.lineWidth   = 2.5;
+    ctx.strokeRect(x1, y1, w, h);
+    ctx.shadowBlur  = 0;
+
+    // Corner accents (make it look tactical)
+    const cs = Math.min(w, h, 18);
+    ctx.strokeStyle = '#ffaa00';
+    ctx.lineWidth   = 2;
+    [[x1,y1,1,1],[x2,y1,-1,1],[x1,y2,1,-1],[x2,y2,-1,-1]].forEach(([cx,cy,dx,dy]) => {
+      ctx.beginPath();
+      ctx.moveTo(cx + dx*cs, cy);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx, cy + dy*cs);
+      ctx.stroke();
+    });
+
+    // Label background
+    ctx.font = 'bold 13px "Share Tech Mono", monospace';
+    const tw = ctx.measureText(label).width;
+    const lx = x1;
+    const ly = y1 > 26 ? y1 - 26 : y1 + h + 4;
+    ctx.fillStyle = '#ff4b2bee';
+    ctx.fillRect(lx, ly, tw + 12, 22);
+
+    // Label text
+    ctx.fillStyle = '#fff';
+    ctx.shadowBlur = 0;
+    ctx.fillText(label, lx + 6, ly + 15);
   }
-  detCont.innerHTML = S.lastDetections
-    .map(d => `<span class="det-badge">${esc(d.label)} ${(d.confidence*100).toFixed(0)}%</span>`)
-    .join('');
-}
-
-function renderLog() {
-  // Trim to max
-  if (S.log.length > MAX_LOG_ENTRIES) S.log = S.log.slice(-MAX_LOG_ENTRIES);
-
-  if (!S.log.length) {
-    vlmLog.innerHTML = '<span class="log-empty">Waiting for VLM analysis…</span>';
-    return;
-  }
-  const html = [...S.log].reverse().map(e =>
-    `<div class="log-entry"><span class="log-ts">[${e.ts}]</span>${esc(e.text)}</div>`
-  ).join('');
-  vlmLog.innerHTML = html;
 }
 
 /* ═══════════════════════════════════════════════════════════
-   FPS DISPLAY (separate timer)
+   RENDER
 ═══════════════════════════════════════════════════════════ */
-// Count detections sent per minute – rough estimate
+function render() {
+  // Banner
+  if (S.fireAlarm) {
+    alarmBanner.className = 'active';
+    alarmBanner.innerHTML = '🚨 &nbsp; FIRE ALARM ACTIVE &nbsp; 🚨';
+  } else {
+    alarmBanner.className = 'nominal';
+    alarmBanner.innerHTML = '● &nbsp; SYSTEM NOMINAL';
+  }
+
+  syncAudio();
+
+  // Stats
+  sDet.textContent   = S.totalDetections;
+  sVlm.textContent   = S.vlmCalls;
+  sAlarm.textContent = S.fireAlarm ? '🔴' : '🟢';
+
+  // Detection badges
+  if (!S.lastDetections.length) {
+    detCont.innerHTML = '<span class="no-threat">No threats detected</span>';
+  } else {
+    detCont.innerHTML = S.lastDetections
+      .map(d => `<span class="det-badge">${esc(d.label)} ${(d.confidence*100).toFixed(0)}%</span>`)
+      .join('');
+  }
+
+  // VLM log
+  if (S.log.length > MAX_LOG_ENTRIES) S.log = S.log.slice(-MAX_LOG_ENTRIES);
+  if (!S.log.length) {
+    vlmLog.innerHTML = '<span class="log-empty">Waiting for VLM analysis…</span>';
+  } else {
+    vlmLog.innerHTML = [...S.log].reverse()
+      .map(e => `<div class="log-entry"><span class="log-ts">[${e.ts}]</span>${esc(e.text)}</div>`)
+      .join('');
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FPS COUNTER
+═══════════════════════════════════════════════════════════ */
 let _fpsWindow = 0;
 setInterval(() => {
-  sFps.textContent = _fpsWindow * 12; // 5s window × 12 = per-minute
-  _fpsWindow = 0;
+  // frames in last 5 s × 12 = frames/min
+  sFps.textContent = S.fpsCount * 12;
+  S.fpsCount = 0;
 }, 5000);
-// Patch runDetection to tick the window counter
-const _origRunDetection = runDetection;
-// (already increments S.fpsCount which we read above)
 
 /* ═══════════════════════════════════════════════════════════
    HELPERS
 ═══════════════════════════════════════════════════════════ */
-function nowHMS() {
-  return new Date().toTimeString().slice(0, 8);
-}
+function nowHMS() { return new Date().toTimeString().slice(0, 8); }
 function esc(s) {
   return String(s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -901,6 +917,7 @@ btnStart.addEventListener('click', startCamera);
 btnStop.addEventListener('click', () => {
   stopCamera();
   S.fireAlarm = false;
+  S.lastDetections = [];
   render();
 });
 
@@ -910,19 +927,16 @@ btnReset.addEventListener('click', () => {
   S.totalDetections  = 0;
   S.vlmCalls         = 0;
   S.lastDetections   = [];
+  S.lastDetectionTime= 0;
   S.log              = [];
   alarmAudio.pause();
   alarmAudio.currentTime = 0;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   render();
 });
 
-/* ═══════════════════════════════════════════════════════════
-   INIT
-═══════════════════════════════════════════════════════════ */
-// Re-sync canvas CSS size on window resize so boxes stay aligned
-window.addEventListener('resize', () => {
-  if (stream) syncSize();
-});
+/* Re-sync canvas size on window resize */
+window.addEventListener('resize', () => { if (stream) syncSize(); });
 
 render();
 </script>
