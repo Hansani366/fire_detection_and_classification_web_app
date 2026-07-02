@@ -1,2 +1,12 @@
 .DS_Store
 .env
+
+# alert-service secrets & local DB
+alert-service/secrets/firebase-sa.json
+alert-service/*.db
+alert-service/*.db-wal
+alert-service/*.db-shm
+
+# Python bytecode
+__pycache__/
+*.pyc

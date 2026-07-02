@@ -513,6 +513,7 @@ const MIN_CONF            = 0.35;  // ← lowered from 0.5 so more detections pa
 const MAX_LOG_ENTRIES     = 12;
 const DETECTION_HOLD_MS   = 2500;  // keep boxes on screen this long after last YOLO hit
 const VLM_CONFIRM_REQUIRED = true; // set false to alarm on YOLO alone (useful for debugging)
+const CAMERA_ZONE_ID       = 'fabric-store'; // detector this dashboard reports as (→ alert-service → phone push)
 
 /* ═══════════════════════════════════════════════════════════
    STATE
@@ -530,6 +531,7 @@ const S = {
   fpsCount:           0,
   lastDetectionTime:  0,   // FIX 2: timestamp of last YOLO hit — for hold logic
   pendingVlm:         false,
+  reported:           false, // have we already reported this alarm to alert-service?
 };
 
 /* ═══════════════════════════════════════════════════════════
@@ -675,6 +677,38 @@ async function callVlm(blob) {
   return await res.json(); // { detected, type, description }
 }
 
+/* Report a confirmed fire to alert-service (which pushes the mobile app).
+   Fired once on the rising edge of the alarm; reset when the hold expires. */
+async function reportFire(vlm) {
+  const conf = S.lastDetections.length
+    ? Math.max(...S.lastDetections.map(d => d.confidence))
+    : MIN_CONF;
+  try {
+    await fetch('/api/events/fire', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        zoneId: CAMERA_ZONE_ID,
+        type: vlm.type || 'fire',
+        confidence: conf,
+        description: vlm.description || '',
+        detectedAt: new Date().toISOString(),
+      }),
+    });
+  } catch (e) { console.warn('[alert] fire report failed:', e.message); }
+}
+
+/* Tell alert-service the alarm has cleared (lets it resolve the incident promptly). */
+async function reportClear() {
+  try {
+    await fetch('/api/events/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zoneId: CAMERA_ZONE_ID }),
+    });
+  } catch (e) { /* best-effort */ }
+}
+
 /* ═══════════════════════════════════════════════════════════
    DETECTION LOOP
 ═══════════════════════════════════════════════════════════ */
@@ -734,6 +768,12 @@ async function runDetection() {
             S.fireAlarm = true; // YOLO alone
           }
 
+          /* ── Report the confirmed fire once (rising edge) → mobile push ── */
+          if (S.fireAlarm && !S.reported) {
+            S.reported = true;
+            reportFire(vlm);
+          }
+
           render();
         })
         .catch(e => {
@@ -753,8 +793,10 @@ async function runDetection() {
        so boxes stay visible across brief missed frames.      */
     const age = Date.now() - S.lastDetectionTime;
     if (age > DETECTION_HOLD_MS) {
+      if (S.reported) reportClear();   // fire is gone → let alert-service resolve the incident
       S.lastDetections = [];
       S.fireAlarm      = false;
+      S.reported       = false;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
     // else: keep existing boxes on screen
@@ -916,7 +958,9 @@ btnStart.addEventListener('click', startCamera);
 
 btnStop.addEventListener('click', () => {
   stopCamera();
+  if (S.reported) reportClear();
   S.fireAlarm = false;
+  S.reported = false;
   S.lastDetections = [];
   render();
 });
@@ -928,6 +972,7 @@ btnReset.addEventListener('click', () => {
   S.vlmCalls         = 0;
   S.lastDetections   = [];
   S.lastDetectionTime= 0;
+  S.reported         = false;
   S.log              = [];
   alarmAudio.pause();
   alarmAudio.currentTime = 0;

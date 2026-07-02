@@ -32,6 +32,31 @@ services:
       - yolo-service
       - vlm-service
 
+  # ── Mobile Alert Service (FCM push + app state) ───────────────
+  # Holds zones/incidents/history, receives confirmed-fire events, sends push.
+  # Publishes :8090 directly so the phone app can reach it over plain HTTP on
+  # the LAN (avoids the self-signed-cert dance a native client hits via nginx).
+  alert-service:
+    build: ./alert-service
+    container_name: firewatch-alert
+    restart: unless-stopped
+    expose:
+      - "8090"
+    ports:
+      - "8090:8090"
+    environment:
+      - FIREBASE_CREDENTIALS=/secrets/firebase-sa.json
+      - DB_PATH=/data/alert.db
+      - SITE_NAME=Unit 7
+      - COOLDOWN_SECONDS=120     # min seconds between separate incidents in one zone
+      - CLEAR_AFTER_SECONDS=30   # no fire event for this long → auto-clear the incident
+    volumes:
+      - ./alert-service/secrets:/secrets:ro   # drop firebase-sa.json in here to enable push
+      - alert-data:/data                      # SQLite lives here (survives restarts)
+    depends_on:
+      - yolo-service
+      - vlm-service
+
   # ── HTTPS Reverse Proxy ───────────────────────────────────────
   # Certs are generated automatically during `docker compose build`.
   # No manual cert generation needed.
@@ -44,3 +69,7 @@ services:
       - "443:443"  # open https://localhost
     depends_on:
       - frontend
+      - alert-service
+
+volumes:
+  alert-data:
