@@ -234,11 +234,18 @@ html, body {
   overflow: hidden;
 }
 
-#preview-video {
+/* Both frame sources fill the viewport identically. object-fit MUST stay
+   `cover` on both: coverTransform() in JS reimplements exactly this mapping
+   to place the bounding boxes, so any other fit misaligns every box. */
+#preview-video,
+#esp32-view {
   width: 100%; height: 100%;
   object-fit: cover;
   display: block;
 }
+/* Must outrank the rule above, or the `hidden` attribute is ignored. */
+#preview-video[hidden],
+#esp32-view[hidden] { display: none; }
 
 /* ── FIX 1: canvas must match the container size in CSS
       and use internal resolution = container size too.
@@ -314,6 +321,73 @@ html, body {
   gap: 8px;
   margin-top: 12px;
 }
+
+/* ── Camera source picker ── */
+.src-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+.src-label {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 0.68rem;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--ink3);
+}
+.src-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--neutral-bg);
+  border: 1px solid var(--line);
+  border-radius: 100px;
+}
+/* Undo the global button rule (46px pill) for these small segments. */
+.src-btn {
+  min-height: 0;
+  padding: 6px 13px;
+  font-size: 0.72rem;
+  letter-spacing: 0.2px;
+  border-radius: 100px;
+  background: transparent;
+  color: var(--ink3);
+}
+.src-btn.active {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(16,22,35,.10);
+}
+.src-btn:hover:not(:disabled):not(.active) { color: var(--ink2); }
+
+.esp32-addr { display: flex; align-items: center; gap: 8px; }
+.esp32-addr[hidden] { display: none; }
+#esp32-host {
+  width: 150px;
+  font-family: var(--body);
+  font-size: 0.78rem;
+  color: var(--ink);
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  border-radius: 100px;
+  padding: 7px 13px;
+}
+#esp32-host:focus {
+  outline: none;
+  border-color: var(--outline);
+}
+.esp32-state {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 0.72rem;
+  color: var(--ink3);
+}
+.esp32-state.err { color: var(--danger-ink); }
+.esp32-state.ok  { color: var(--safe-ink); }
 
 button {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -578,7 +652,8 @@ button:disabled {
       </div>
 
       <div class="cam-wrap" id="cam-wrap">
-        <video id="preview-video" autoplay muted playsinline></video>
+        <video id="preview-video" autoplay muted playsinline hidden></video>
+        <img id="esp32-view" alt="ESP32-CAM live view" hidden>
         <canvas id="overlay-canvas"></canvas>
 
         <div id="rec-dot">
@@ -591,6 +666,19 @@ button:disabled {
           </div>
           <span class="ph-title">CAMERA OFFLINE</span>
           <span class="ph-hint">Press Start Monitoring to activate the feed</span>
+        </div>
+      </div>
+
+      <div class="src-row">
+        <span class="src-label">Source</span>
+        <div class="src-toggle" id="src-toggle" role="group" aria-label="Camera source">
+          <button type="button" class="src-btn active" data-source="webcam">Laptop Camera</button>
+          <button type="button" class="src-btn"        data-source="esp32">ESP32-CAM</button>
+        </div>
+        <div class="esp32-addr" id="esp32-addr" hidden>
+          <input id="esp32-host" type="text" inputmode="url" spellcheck="false"
+                 autocomplete="off" placeholder="192.168.1.50" aria-label="ESP32-CAM address">
+          <span class="esp32-state" id="esp32-state"><span class="svc-dot idle"></span>Not checked</span>
         </div>
       </div>
 
@@ -609,7 +697,7 @@ button:disabled {
       <div class="svc-row">
         <div class="svc-pill"><span class="svc-dot idle" id="dot-yolo"></span>YOLO Detector</div>
         <div class="svc-pill"><span class="svc-dot idle" id="dot-vlm"></span>VLM Analysis</div>
-        <div class="svc-pill"><span class="svc-dot idle" id="dot-cam"></span>Camera</div>
+        <div class="svc-pill"><span class="svc-dot idle" id="dot-cam"></span><span id="cam-src-label">Camera</span></div>
       </div>
     </div>
 
@@ -635,6 +723,7 @@ button:disabled {
   </div>
 </div>
 
+<script src="/js/camera-sources.js"></script>
 <script>
 "use strict";
 
@@ -647,6 +736,7 @@ const MAX_LOG_ENTRIES     = 12;
 const DETECTION_HOLD_MS   = 2500;  // keep boxes on screen this long after last YOLO hit
 const VLM_CONFIRM_REQUIRED = true; // set false to alarm on YOLO alone (useful for debugging)
 const CAMERA_ZONE_ID       = 'fabric-store'; // detector this dashboard reports as (→ alert-service → phone push)
+const ESP32_HEALTH_POLL_MS = 5000; // how often to re-check the board while it is the live source
 
 /* ═══════════════════════════════════════════════════════════
    STATE
@@ -665,6 +755,19 @@ const S = {
   lastDetectionTime:  0,   // FIX 2: timestamp of last YOLO hit — for hold logic
   pendingVlm:         false,
   reported:           false, // have we already reported this alarm to alert-service?
+
+  /* Bumped whenever the feed is torn down. In-flight VLM calls carry the
+     generation they started in and drop their result if it has moved on —
+     otherwise a reply for the camera we just switched away from (up to 60s
+     later, the VLM timeout) could raise an alarm and push it to the phone. */
+  gen:                0,
+
+  /* Which camera we are watching, and whether it is still delivering frames. */
+  sourceId:           lsGet('fw.cameraSource') || 'webcam',
+  esp32Host:          lsGet('fw.esp32Host')    || '',
+  sourceHealthy:      true,
+  healthTimerId:      null,
+  healthStrikes:      0,
 };
 
 /* ═══════════════════════════════════════════════════════════
@@ -672,8 +775,10 @@ const S = {
 ═══════════════════════════════════════════════════════════ */
 const $           = id => document.getElementById(id);
 const video       = $('preview-video');
+const esp32View   = $('esp32-view');
 const canvas      = $('overlay-canvas');
 const ctx         = canvas.getContext('2d');
+const camWrap     = $('cam-wrap');
 const placeholder = $('cam-placeholder');
 const recDot      = $('rec-dot');
 const alarmBanner = $('alarm-banner');
@@ -693,6 +798,11 @@ const dotCam      = $('dot-cam');
 const livePill    = $('live-pill');
 const liveText    = $('live-text');
 const camLive     = $('cam-live');
+const srcToggle   = $('src-toggle');
+const esp32Addr   = $('esp32-addr');
+const esp32Host   = $('esp32-host');
+const esp32State  = $('esp32-state');
+const camSrcLabel = $('cam-src-label');
 
 /* ═══════════════════════════════════════════════════════════
    ICON MARKUP  (inline SVG — reused by render())
@@ -734,9 +844,12 @@ const offCtx    = offscreen.getContext('2d');
        maps native coords → display coords before drawing.
 ───────────────────────────────────────────────────────── */
 function syncSize() {
-  const rect = video.getBoundingClientRect();
-  const dw = Math.round(rect.width)  || 640;
-  const dh = Math.round(rect.height) || 360;
+  /* Content box of the viewport — the same box both media elements fill at
+     100%/100%. Taken from #cam-wrap rather than the element itself so it is
+     still correct while a source is hidden mid-switch. (clientWidth excludes
+     the 1px border, which getBoundingClientRect would wrongly include.) */
+  const dw = camWrap.clientWidth  || 640;
+  const dh = camWrap.clientHeight || 360;
 
   // Canvas drawn at display resolution (1:1 with screen pixels)
   if (canvas.width !== dw || canvas.height !== dh) {
@@ -746,11 +859,10 @@ function syncSize() {
   canvas.style.width  = dw + 'px';
   canvas.style.height = dh + 'px';
 
-  // Offscreen at native video resolution (what YOLO gets)
-  const vw = video.videoWidth  || 640;
-  const vh = video.videoHeight || 480;
-  offscreen.width  = vw;
-  offscreen.height = vh;
+  // Offscreen at the active camera's native resolution (what YOLO gets)
+  const n = activeSource ? activeSource.nativeSize() : { w: 640, h: 480 };
+  offscreen.width  = n.w;
+  offscreen.height = n.h;
 }
 
 /* Compute object-fit:cover scale + offset for a given
@@ -764,41 +876,80 @@ function coverTransform(nativeW, nativeH, displayW, displayH) {
 
 /* ═══════════════════════════════════════════════════════════
    CAMERA
+
+   The laptop webcam and the ESP32-CAM are interchangeable frame
+   sources behind one interface (see /js/camera-sources.js), so
+   everything below this section — the detect loop, the box
+   drawing, the alarm — is identical whichever one is selected.
 ═══════════════════════════════════════════════════════════ */
-let stream = null;
+let activeSource = null;
 
-async function startCamera() {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    video.srcObject = stream;
-    await new Promise(res => video.addEventListener('loadedmetadata', res, { once: true }));
-    // Let the video render one frame so getBoundingClientRect is valid
-    await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
-    syncSize();
+const phTitle = placeholder.querySelector('.ph-title');
+const phHint  = placeholder.querySelector('.ph-hint');
 
-    placeholder.style.display = 'none';
-    recDot.classList.add('visible');
-    dotCam.className = 'svc-dot ok';
-    camLive.className = 'cam-live on';
-    camLive.innerHTML = '<span class="cl-dot"></span>Live';
-    livePill.className = 'live-pill on';
-    liveText.textContent = 'MONITORING';
-    btnStart.disabled = true;
-    btnStop.disabled  = false;
-
-    startLoop();
-  } catch (e) {
-    dotCam.className = 'svc-dot err';
-    alert('Camera error: ' + e.message);
-  }
+function showPlaceholder(title, hint) {
+  phTitle.textContent = title;
+  phHint.textContent  = hint;
+  placeholder.style.display = 'flex';
 }
 
-function stopCamera() {
+function buildSource(id) {
+  if (id === 'esp32') {
+    return CameraSources.createEsp32Source({
+      img:  esp32View,
+      host: S.esp32Host,
+      onError: () => markSourceUnhealthy('Stream dropped'),
+    });
+  }
+  return CameraSources.createWebcamSource({
+    video,
+    onError: () => markSourceUnhealthy('Camera disconnected'),
+  });
+}
+
+async function startMonitoring() {
+  activeSource = buildSource(S.sourceId);
+  try {
+    await activeSource.start();
+  } catch (e) {
+    /* An unreachable board is an ordinary, recoverable state the user needs to
+       read while they fix the address — so it goes in the viewport, not a
+       modal alert() they have to dismiss before they can type. */
+    activeSource.stop();
+    activeSource = null;
+    dotCam.className = 'svc-dot err';
+    if (S.sourceId === 'esp32') setEsp32State('err', 'Unreachable');
+    showPlaceholder('CAMERA UNAVAILABLE', e.message);
+    return;
+  }
+
+  activeSource.element.hidden = false;
+  S.sourceHealthy = true;
+  syncSize();
+
+  placeholder.style.display = 'none';
+  recDot.classList.add('visible');
+  dotCam.className = 'svc-dot ok';
+  camLive.className = 'cam-live on';
+  camLive.innerHTML = '<span class="cl-dot"></span>Live';
+  livePill.className = 'live-pill on';
+  liveText.textContent = 'MONITORING';
+  btnStart.disabled = true;
+  btnStop.disabled  = false;
+
+  if (S.sourceId === 'esp32') startHealthPoll();
+  startLoop();
+}
+
+function stopMonitoring() {
   stopLoop();
-  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-  video.srcObject = null;
+  stopHealthPoll();
+  if (activeSource) { activeSource.stop(); activeSource = null; }
+  video.hidden     = true;
+  esp32View.hidden = true;
+  S.sourceHealthy  = true;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  placeholder.style.display = 'flex';
+  showPlaceholder('CAMERA OFFLINE', 'Press Start Monitoring to activate the feed');
   recDot.classList.remove('visible');
   dotCam.className = 'svc-dot idle';
   camLive.className = 'cam-live';
@@ -807,15 +958,90 @@ function stopCamera() {
   liveText.textContent = 'STANDBY';
   btnStart.disabled = false;
   btnStop.disabled  = true;
+  setEsp32State('idle', 'Not checked');
+}
+
+/* ─────────────────────────────────────────────────────────
+   ESP32 WATCHDOG
+
+   An <img> whose MJPEG connection dies keeps painting its last
+   frame forever, so YOLO would go on scoring a stale image and
+   the alarm could latch on a fire that is no longer there.
+   When the board stops answering we simply stop feeding frames:
+   captureBlob() returns null, which is exactly the "no frame"
+   case DETECTION_HOLD_MS already decays — it calls reportClear()
+   and drops the boxes on its own. No new alarm logic.
+───────────────────────────────────────────────────────── */
+function setEsp32State(kind, text) {
+  esp32State.className = 'esp32-state' + (kind === 'idle' ? '' : ' ' + kind);
+  esp32State.innerHTML = '<span class="svc-dot ' + kind + '"></span>' + esc(text);
+}
+
+function markSourceUnhealthy(detail) {
+  if (!S.sourceHealthy) return;
+  S.sourceHealthy = false;
+  dotCam.className = 'svc-dot err';
+  camLive.className = 'cam-live';
+  camLive.innerHTML = '<span class="cl-dot"></span>Offline';
+  setEsp32State('err', detail);
+}
+
+function markSourceHealthy() {
+  if (S.sourceHealthy) return;
+  S.sourceHealthy = true;
+  S.healthStrikes = 0;
+  dotCam.className = 'svc-dot ok';
+  camLive.className = 'cam-live on';
+  camLive.innerHTML = '<span class="cl-dot"></span>Live';
+  setEsp32State('ok', 'Connected');
+}
+
+/* While a stream is open the bridge answers from the bytes it has actually
+   relayed — it never probes the board, which could not reply anyway. So "stale"
+   here means the picture has frozen, not merely that a socket is up. Two
+   consecutive strikes are required so one dropped poll or a brief Wi-Fi blip
+   does not tear down a healthy feed. */
+async function pollEsp32Health() {
+  const qs = S.esp32Host ? '?host=' + encodeURIComponent(S.esp32Host) : '';
+  let detail = null;
+  try {
+    const data = await (await fetch('/api/esp32/health' + qs)).json();
+    if (data.status === 'ok') {
+      S.healthStrikes = 0;
+      markSourceHealthy();
+      return;
+    }
+    detail = data.status === 'stale' ? 'Feed frozen'
+           : data.status === 'unconfigured' ? 'No address set'
+           : 'Unreachable';
+  } catch (e) {
+    detail = 'Bridge unreachable';
+  }
+
+  if (++S.healthStrikes >= 2) markSourceUnhealthy(detail);
+}
+
+function startHealthPoll() {
+  stopHealthPoll();
+  S.healthStrikes = 0;
+  setEsp32State('ok', 'Connected');
+  S.healthTimerId = setInterval(pollEsp32Health, ESP32_HEALTH_POLL_MS);
+}
+
+function stopHealthPoll() {
+  clearInterval(S.healthTimerId);
+  S.healthTimerId = null;
 }
 
 /* ═══════════════════════════════════════════════════════════
    CAPTURE
 ═══════════════════════════════════════════════════════════ */
 function captureBlob(quality = 0.75) {
-  if (!stream || video.readyState < 2) return Promise.resolve(null);
+  if (!activeSource || !activeSource.isReady() || !S.sourceHealthy) {
+    return Promise.resolve(null);
+  }
   syncSize();
-  offCtx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
+  activeSource.drawInto(offCtx, offscreen.width, offscreen.height);
   return new Promise(res => offscreen.toBlob(res, 'image/jpeg', quality));
 }
 
@@ -915,8 +1141,10 @@ async function runDetection() {
     if (!S.pendingVlm) {
       S.pendingVlm = true;
       S.vlmCalls++;
+      const gen = S.gen;   // the feed this frame came from
       captureBlob(0.72).then(blob2 => callVlm(blob2))
         .then(vlm => {
+          if (gen !== S.gen) return;   // camera was switched or stopped — stale
           dotVlm.className = 'svc-dot ok';
           const logText = vlm.detected
             ? (vlm.description || `Fire/smoke confirmed: ${vlm.type}`)
@@ -939,6 +1167,7 @@ async function runDetection() {
           render();
         })
         .catch(e => {
+          if (gen !== S.gen) return;   // stale — see above
           dotVlm.className = 'svc-dot err';
           S.log.push({ ts: nowHMS(), text: `[vlm error: ${e.message}]` });
           console.warn('[VLM]', e.message);
@@ -1097,6 +1326,12 @@ setInterval(() => {
    HELPERS
 ═══════════════════════════════════════════════════════════ */
 function nowHMS() { return new Date().toTimeString().slice(0, 8); }
+
+/* localStorage throws outright in some privacy modes — an unguarded read at
+   startup would take the whole script down with it. */
+function lsGet(k)    { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); }    catch (e) { /* ignore */ } }
+
 function esc(s) {
   return String(s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -1105,15 +1340,24 @@ function esc(s) {
 /* ═══════════════════════════════════════════════════════════
    BUTTON EVENTS
 ═══════════════════════════════════════════════════════════ */
-btnStart.addEventListener('click', startCamera);
+/* Boxes and alarm belong to the camera that produced them — dropping the feed
+   must not leave either behind. Shared by Stop and by switching source. */
+function clearDetectionState() {
+  S.gen++;                      // invalidate any VLM call still in flight
+  if (S.reported) reportClear();
+  S.fireAlarm      = false;
+  S.reported       = false;
+  S.pendingVlm     = false;
+  S.lastDetections = [];
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  render();
+}
+
+btnStart.addEventListener('click', startMonitoring);
 
 btnStop.addEventListener('click', () => {
-  stopCamera();
-  if (S.reported) reportClear();
-  S.fireAlarm = false;
-  S.reported = false;
-  S.lastDetections = [];
-  render();
+  stopMonitoring();
+  clearDetectionState();
 });
 
 btnReset.addEventListener('click', () => {
@@ -1131,8 +1375,60 @@ btnReset.addEventListener('click', () => {
   render();
 });
 
+/* ═══════════════════════════════════════════════════════════
+   CAMERA SOURCE EVENTS
+═══════════════════════════════════════════════════════════ */
+function updateSourceUi() {
+  srcToggle.querySelectorAll('.src-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.source === S.sourceId);
+  });
+  esp32Addr.hidden        = S.sourceId !== 'esp32';
+  camSrcLabel.textContent = S.sourceId === 'esp32' ? 'Camera · ESP32' : 'Camera · Laptop';
+}
+
+/* Swap cameras in place: if we were monitoring, keep monitoring. */
+async function restartWithSource() {
+  const wasRunning = S.running;
+  if (activeSource) stopMonitoring();
+  clearDetectionState();
+  if (wasRunning) await startMonitoring();
+}
+
+async function switchSource(id) {
+  if (id === S.sourceId) return;
+  const wasRunning = S.running;
+  if (activeSource) stopMonitoring();
+  clearDetectionState();
+  S.sourceId = id;
+  lsSet('fw.cameraSource', id);
+  updateSourceUi();
+  if (wasRunning) await startMonitoring();
+}
+
+srcToggle.addEventListener('click', e => {
+  const btn = e.target.closest('.src-btn');
+  if (btn) switchSource(btn.dataset.source);
+});
+
+/* The board is on DHCP, so the address has to be changeable without a rebuild. */
+esp32Host.addEventListener('change', () => {
+  S.esp32Host = esp32Host.value.trim();
+  lsSet('fw.esp32Host', S.esp32Host);
+  if (S.sourceId === 'esp32') restartWithSource();
+});
+
 /* Re-sync canvas size on window resize */
-window.addEventListener('resize', () => { if (stream) syncSize(); });
+window.addEventListener('resize', () => { if (activeSource) syncSize(); });
+
+esp32Host.value = S.esp32Host;
+updateSourceUi();
+
+/* Show the .env default as the placeholder, so an empty field visibly means
+   "use the configured board" rather than "nothing is set". */
+fetch('/api/esp32/config')
+  .then(r => r.json())
+  .then(c => { if (c.defaultHost) esp32Host.placeholder = c.defaultHost + ' (from .env)'; })
+  .catch(() => {});
 
 render();
 </script>

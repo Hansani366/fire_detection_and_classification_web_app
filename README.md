@@ -10,9 +10,10 @@ A real-time fire detection system using **YOLOv11** for object detection and **G
 Browser ──HTTPS──▶ nginx (443/80) ──▶ Frontend (3000) ──┬─▶ YOLO Service  (8000)
                                                          ├─▶ VLM Service   (8019)
                                                          └─▶ Alert Service (8090) ──FCM──▶ 📱 Mobile App
+                                    └─▶ ESP32 Bridge (8021) ──HTTP──▶ 📷 ESP32-CAM (on your LAN)
 ```
 
-**Flow:** Camera → YOLO detects fire/smoke (≥35% confidence) → VLM confirms the scene → 🚨 Alarm when **both agree** → Alert Service records the incident and pushes an FCM notification to the mobile app.
+**Flow:** Camera (laptop webcam **or** ESP32-CAM) → YOLO detects fire/smoke (≥35% confidence) → VLM confirms the scene → 🚨 Alarm when **both agree** → Alert Service records the incident and pushes an FCM notification to the mobile app.
 
 > nginx publishes 80/443; the frontend, YOLO, and VLM services stay on the internal
 > Docker network. The **alert service** additionally publishes `8090` to the host so the
@@ -30,6 +31,7 @@ mid-demo-vision-system/
 ├── yolo-service/      # YOLOv11 fire & smoke detection API
 ├── vlm-service/       # Gemini 2.5 Flash scene confirmation API
 ├── alert-service/     # Mobile alert backend — FCM push + zones/incidents/history (SQLite)
+├── esp32-service/     # ESP32-CAM bridge — relays the board's MJPEG stream same-origin
 ├── nginx/             # HTTPS reverse proxy (self-signed cert)
 ├── .env               # Your API keys (never commit this)
 ├── sample.env         # Template for .env
@@ -115,6 +117,17 @@ same LAN can reach it over plain HTTP without the self-signed-cert dance.
 > Push is optional: without `alert-service/secrets/firebase-sa.json` the service runs
 > normally and simply skips notifications.
 
+**ESP32 bridge configuration** (`esp32-service`, all optional except the first):
+
+| Env var | Default | Meaning |
+|---------|---------|---------|
+| `ESP32_CAM_URL` | _(unset)_ | Default board address, e.g. `http://192.168.1.50`. The dashboard can override it. |
+| `ESP32_CONNECT_TIMEOUT` | `3` | Seconds to wait for the board to accept a connection |
+| `ESP32_STREAM_READ_TIMEOUT` | `10` | Seconds without stream data before dropping it (`0` = wait forever) |
+| `ESP32_STILL_TIMEOUT` | `5` | Seconds for a single `/still` fetch |
+| `ESP32_PROBE_TIMEOUT` | `2` | Seconds for a health probe — must stay below the dashboard's poll interval |
+| `ESP32_STALE_AFTER_MS` | `3000` | No relayed frames for this long → the feed is reported as frozen |
+
 ---
 
 ## Health Checks
@@ -126,4 +139,47 @@ internal-only, so reach them through their containers:
 curl -s http://localhost:8090/health                                     # Alert service
 docker compose exec yolo-service curl -s http://localhost:8000/health    # YOLO
 docker compose exec vlm-service  curl -s http://localhost:8019/health    # VLM
+docker compose exec esp32-service curl -s http://localhost:8021/health   # ESP32 bridge
 ```
+
+---
+
+## ESP32-CAM as a camera source
+
+The dashboard can run detection on an **ESP32-CAM** instead of the laptop webcam. Flash the
+board with the `esp32cam_stream_v2_final_working_code_via_wifi.ino` sketch (set your 2.4 GHz
+SSID and password at the top), then pick **ESP32-CAM** in the dashboard's **Source** switch.
+Everything downstream — YOLO, VLM confirmation, the alarm, the phone push — is identical.
+
+Find the board's address on the 115200 serial monitor at boot:
+
+```
+>>> OPEN THIS:  http://192.168.1.50
+```
+
+Put that in `.env` as `ESP32_CAM_URL`, or type it into the address field next to the Source
+switch (it is remembered in the browser, which is handy while the board is on DHCP). An
+empty field means "use `ESP32_CAM_URL`".
+
+```bash
+# Is the board reachable from inside the bridge container?
+docker compose exec esp32-service curl -s -o /dev/null -w '%{http_code}\n' http://192.168.1.50/still
+
+# Bridge's view of the board (also what the dashboard polls)
+curl -sk https://localhost/api/esp32/health
+```
+
+> **`ESP32_CAM_URL` is read at container start.** After editing `.env`, run
+> `docker compose up -d --force-recreate esp32-service` — a plain `restart` keeps the old value.
+
+**Why a bridge service rather than pointing the browser at the board?** The dashboard is
+HTTPS-only, so a plain-HTTP `<img>` from the board is blocked as mixed content — and even if
+it loaded, it would taint the capture canvas and make frame grabbing throw. The bridge
+relays the stream same-origin, which solves both.
+
+**One viewer at a time.** The board runs a single-threaded HTTP server whose stream handler
+never returns, so while it is streaming it cannot answer anything else. Keep one dashboard
+tab on ESP32 mode; opening a second drops the first. The bridge reports liveness from frames
+it has actually relayed rather than by polling the board, and if the picture freezes the
+dashboard stops sending frames to YOLO so the alarm clears instead of latching on a stale
+image.

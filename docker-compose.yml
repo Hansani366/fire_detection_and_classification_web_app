@@ -18,6 +18,19 @@ services:
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
 
+  # ── ESP32-CAM Bridge ──────────────────────────────────────────
+  # Same-origin proxy for the board's MJPEG stream. The dashboard is HTTPS, so it
+  # cannot load http://<board-ip>/stream directly (mixed content) and a cross-origin
+  # <img> would taint the capture canvas.
+  esp32-service:
+    build: ./esp32-service
+    container_name: firewatch-esp32
+    restart: unless-stopped
+    expose:
+      - "8021"
+    environment:
+      - ESP32_CAM_URL=${ESP32_CAM_URL:-}
+
   # ── HTML/JS Frontend ──────────────────────────────────────────
   frontend:
     build: ./frontend
@@ -70,6 +83,7 @@ services:
     depends_on:
       - frontend
       - alert-service
+      - esp32-service
 
 volumes:
   alert-data:
