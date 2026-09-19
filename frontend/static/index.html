@@ -565,6 +565,137 @@ button:disabled {
 .svc-dot.ok   { background: var(--safe); }
 .svc-dot.err  { background: var(--danger); animation: blink 1.2s ease-in-out infinite; }
 .svc-dot.idle { background: var(--outline); }
+
+/* ═══════════════════════════════════════════════════════════
+   SENSOR NETWORK
+═══════════════════════════════════════════════════════════ */
+.sn-head-state {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--display); font-weight: 700;
+  font-size: 0.64rem; letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--ink3);
+}
+.sn-head-state.ok  { color: var(--safe-ink); }
+.sn-head-state.err { color: var(--danger-ink); }
+
+.sn-node + .sn-node {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+/* A node that stopped reporting keeps its last numbers, dimmed — blanking them
+   would throw away the reading that matters most when a node drops. */
+.sn-node.is-stale { opacity: .55; }
+
+.sn-node-head {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.sn-node-id {
+  font-family: var(--display); font-weight: 800;
+  font-size: 0.82rem; color: var(--ink);
+  letter-spacing: -0.2px;
+}
+.sn-node-zone {
+  font-family: var(--body); font-weight: 600;
+  font-size: 0.68rem; color: var(--ink3);
+  background: var(--neutral-bg);
+  padding: 3px 9px; border-radius: 100px;
+}
+.sn-node-state {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--body); font-weight: 600;
+  font-size: 0.68rem; color: var(--ink3);
+  white-space: nowrap;
+}
+.sn-node-state.live { color: var(--safe-ink); }
+.sn-node-state.stale { color: var(--danger-ink); }
+
+.sn-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+/* Five tiles into a 2-column grid leaves one odd: let it span the full width
+   rather than sit next to a gap. */
+.sn-tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+@media (max-width: 900px) { .sn-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.sn-tile {
+  background: var(--neutral-bg);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  padding: 10px 12px;
+  transition: background .3s, border-color .3s;
+}
+.sn-tile-head {
+  display: flex; align-items: baseline; gap: 6px;
+  margin-bottom: 6px;
+}
+.sn-label {
+  font-family: var(--body); font-weight: 600;
+  font-size: 0.68rem; letter-spacing: 0.3px;
+  text-transform: uppercase; color: var(--ink3);
+}
+.sn-module {
+  margin-left: auto;
+  font-family: var(--display); font-weight: 700;
+  font-size: 0.58rem; letter-spacing: 0.4px;
+  color: var(--ink3); opacity: .75;
+  white-space: nowrap;
+}
+.sn-value {
+  font-family: var(--display); font-weight: 800;
+  font-size: 1.15rem; line-height: 1;
+  color: var(--ink);
+  display: flex; align-items: baseline; gap: 4px;
+}
+.sn-unit {
+  font-size: 0.72rem; font-weight: 700;
+  color: var(--ink3);
+}
+
+/* Level is graded by the bridge; these only colour the verdict. */
+.sn-tile.lv-warn {
+  background: var(--warn-bg);
+  border-color: rgba(245,158,11,.35);
+}
+.sn-tile.lv-warn .sn-value { color: var(--warn-ink); }
+.sn-tile.lv-danger {
+  background: var(--danger-bg);
+  border-color: rgba(229,52,42,.35);
+}
+.sn-tile.lv-danger .sn-value { color: var(--danger-ink); }
+.sn-tile.lv-unknown .sn-value { color: var(--ink3); }
+
+.sn-node-meta {
+  margin-top: 9px;
+  font-family: var(--body);
+  font-size: 0.66rem;
+  color: var(--ink3);
+  letter-spacing: 0.2px;
+}
+
+.sn-empty {
+  display: flex; flex-direction: column; gap: 5px;
+  background: var(--neutral-bg);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  padding: 14px;
+}
+.sn-empty-title {
+  font-family: var(--body); font-weight: 600;
+  font-size: 0.82rem; color: var(--ink2);
+}
+.sn-empty-hint {
+  font-family: var(--body);
+  font-size: 0.72rem; color: var(--ink3);
+  line-height: 1.5;
+}
 </style>
 </head>
 <body>
@@ -719,11 +850,24 @@ button:disabled {
           <span class="log-empty">Waiting for VLM analysis…</span>
         </div>
       </div>
+
+      <div class="fw-card">
+        <div class="card-head">
+          <div class="card-title">Sensor Network</div>
+          <div class="sn-head-state idle" id="sensor-state"><span class="svc-dot idle"></span>Connecting…</div>
+        </div>
+        <div id="sensor-body">
+          <div class="sn-empty">
+            <span class="sn-empty-title">Waiting for sensor nodes…</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
 <script src="/js/camera-sources.js"></script>
+<script src="/js/sensor-panel.js"></script>
 <script>
 "use strict";
 
@@ -1429,6 +1573,12 @@ fetch('/api/esp32/config')
   .then(r => r.json())
   .then(c => { if (c.defaultHost) esp32Host.placeholder = c.defaultHost + ' (from .env)'; })
   .catch(() => {});
+
+/* The sensor nodes push on their own schedule, so the panel polls from page
+   load rather than from Start Monitoring — a gas reading is worth showing
+   whether or not anyone is watching the camera. It is read-only for now: it
+   does not feed the alarm, which still requires YOLO and the VLM to agree. */
+SensorPanel.start({ body: $('sensor-body'), status: $('sensor-state') });
 
 render();
 </script>

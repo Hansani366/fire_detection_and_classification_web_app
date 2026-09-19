@@ -10,7 +10,8 @@ A real-time fire detection system using **YOLOv11** for object detection and **G
 Browser ──HTTPS──▶ nginx (443/80) ──▶ Frontend (3000) ──┬─▶ YOLO Service  (8000)
                                                          ├─▶ VLM Service   (8019)
                                                          └─▶ Alert Service (8090) ──FCM──▶ 📱 Mobile App
-                                    └─▶ ESP32 Bridge (8021) ──HTTP──▶ 📷 ESP32-CAM (on your LAN)
+                                    ├─▶ ESP32 Bridge (8021) ──HTTP──▶ 📷 ESP32-CAM (on your LAN)
+                                    └─▶ Sensor Bridge (8022) ◀──HTTP── 🌡️ ESP32 sensor nodes (push)
 ```
 
 **Flow:** Camera (laptop webcam **or** ESP32-CAM) → YOLO detects fire/smoke (≥35% confidence) → VLM confirms the scene → 🚨 Alarm when **both agree** → Alert Service records the incident and pushes an FCM notification to the mobile app.
@@ -32,6 +33,7 @@ mid-demo-vision-system/
 ├── vlm-service/       # Gemini 2.5 Flash scene confirmation API
 ├── alert-service/     # Mobile alert backend — FCM push + zones/incidents/history (SQLite)
 ├── esp32-service/     # ESP32-CAM bridge — relays the board's MJPEG stream same-origin
+├── sensor-service/    # ESP32 sensor bridge — receives MQ-2 / MQ-7 / flame / DHT22 telemetry
 ├── nginx/             # HTTPS reverse proxy (self-signed cert)
 ├── .env               # Your API keys (never commit this)
 ├── sample.env         # Template for .env
@@ -130,6 +132,71 @@ same LAN can reach it over plain HTTP without the self-signed-cert dance.
 
 ---
 
+## ESP32 sensor nodes
+
+The **Sensor Network** card on the dashboard shows live readings from one or more
+ESP32-WROOM-32 nodes carrying an **MQ-2** (gas/smoke), **MQ-7** (carbon monoxide),
+**IR flame** module and **DHT22** (temperature/humidity). The sketch lives in the
+companion `esp_32_sensor_network_code` repo and ships in mock mode, so a bare board
+with nothing wired to it still populates the dashboard.
+
+**The nodes push; nothing polls them.** The camera bridge reaches *out* to the
+ESP32-CAM because an MJPEG stream only exists while someone pulls it. Sensor
+readings are the opposite — they exist regardless, the boards are on DHCP so their
+addresses move, and a network of nodes would mean a list of addresses to maintain
+here. Pushing inverts all of that: each node only needs this machine's address, and
+adding a node costs no configuration at all.
+
+`sensor-service` publishes **`8022`** directly to the host so the boards can POST
+over plain HTTP, for the same reason `alert-service` publishes `8090` — an ESP32
+has no business fighting a self-signed certificate. The browser reaches the same
+service through nginx over HTTPS, same-origin.
+
+| Method & Path | Purpose |
+|---------------|---------|
+| `POST /api/sensors/ingest` | A node submits one sweep of its sensors |
+| `GET  /api/sensors/latest` | Latest sweep per node + freshness (the dashboard polls this) |
+| `GET  /api/sensors/history` | `?deviceId=&limit=` — recent samples for one node |
+| `GET  /health` | Liveness, node count, whether a key is required |
+
+**Configuration** (set in `docker-compose.yml`):
+
+| Env var | Default | Meaning |
+|---------|---------|---------|
+| `SENSOR_STALE_AFTER_S` | `15` | No sample for this long → the node is reported stale |
+| `SENSOR_HISTORY_MAX` | `720` | Samples kept per node (≈36 min at the sketch's 3s cadence) |
+| `SENSOR_INGEST_KEY` | _(empty)_ | Shared secret expected as `X-Device-Key`; empty accepts any LAN device |
+| `SENSOR_MAX_NODES` | `32` | Cap on distinct nodes, so an open port cannot grow memory without limit |
+| `SENSOR_MQ2_WARN` / `_DANGER` | `400` / `800` | Smoke thresholds, ppm |
+| `SENSOR_MQ7_WARN` / `_DANGER` | `35` / `100` | CO thresholds, ppm (35 = OSHA 8-hour ceiling) |
+| `SENSOR_TEMP_WARN` / `_DANGER` | `45` / `60` | Temperature thresholds, °C |
+
+Readings are graded (`normal` / `warn` / `danger`) **in the service, not the
+browser**, so the alerting path can reuse the same verdicts later without the
+thresholds living in two places. A stale node keeps its last numbers on screen but
+dimmed, and its overall level is withheld — otherwise a node that died mid-fire
+would leave the dashboard green.
+
+> **Read-only for now.** Sensor readings are displayed but do not feed the alarm,
+> which still requires YOLO and the VLM to agree.
+
+```bash
+# Simulate a node from your laptop — no board required
+python3 ../esp_32_sensor_network_code/tools/mock_sender.py
+
+# What the dashboard sees
+curl -sk https://localhost/api/sensors/latest | python3 -m json.tool
+
+# Can a board on the LAN reach the ingest port? (run from another machine)
+curl -s -o /dev/null -w '%{http_code}\n' http://<this-laptop-ip>:8022/health
+```
+
+> If the board logs a connection failure but the simulator works, the service is
+> fine — suspect the macOS firewall on 8022, or the board being on a different
+> network. The WROOM-32 is **2.4 GHz only**.
+
+---
+
 ## Health Checks
 
 The alert service is published on the host, so hit it directly. YOLO and VLM are
@@ -140,6 +207,7 @@ curl -s http://localhost:8090/health                                     # Alert
 docker compose exec yolo-service curl -s http://localhost:8000/health    # YOLO
 docker compose exec vlm-service  curl -s http://localhost:8019/health    # VLM
 docker compose exec esp32-service curl -s http://localhost:8021/health   # ESP32 bridge
+curl -s http://localhost:8022/health                                     # Sensor bridge
 ```
 
 ---

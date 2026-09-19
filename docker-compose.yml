@@ -31,6 +31,31 @@ services:
     environment:
       - ESP32_CAM_URL=${ESP32_CAM_URL:-}
 
+  # ── ESP32 Sensor Bridge ───────────────────────────────────────
+  # Receives telemetry pushed by the sensor nodes (MQ-2 / MQ-7 / IR flame /
+  # DHT22) and serves the latest sweep to the dashboard.
+  # Publishes :8022 directly so the boards can POST over plain HTTP on the LAN
+  # — same reasoning as alert-service:8090, an ESP32 should not have to accept
+  # nginx's self-signed cert. Browsers reach it through nginx over HTTPS.
+  sensor-service:
+    build: ./sensor-service
+    container_name: firewatch-sensors
+    restart: unless-stopped
+    expose:
+      - "8022"
+    ports:
+      - "8022:8022"
+    environment:
+      - SENSOR_STALE_AFTER_S=15    # no sample for this long → node reported stale
+      - SENSOR_HISTORY_MAX=720     # samples kept per node (≈36 min at 3s)
+      - SENSOR_INGEST_KEY=${SENSOR_INGEST_KEY:-}   # empty = accept any LAN device
+      - SENSOR_MQ2_WARN=400
+      - SENSOR_MQ2_DANGER=800
+      - SENSOR_MQ7_WARN=35         # OSHA 8-hour CO ceiling
+      - SENSOR_MQ7_DANGER=100
+      - SENSOR_TEMP_WARN=45
+      - SENSOR_TEMP_DANGER=60
+
   # ── HTML/JS Frontend ──────────────────────────────────────────
   frontend:
     build: ./frontend
@@ -84,6 +109,7 @@ services:
       - frontend
       - alert-service
       - esp32-service
+      - sensor-service
 
 volumes:
   alert-data:
