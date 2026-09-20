@@ -89,6 +89,35 @@ services:
       - human-detection-yolo-service
       - vlm-service
 
+  # ── Ablation Testing Service ──────────────────────────────────
+  # Scores one observation stream through six sensing combinations at once, for
+  # the research paper's ablation table. Owns the trained fusion + sensor
+  # models (vendored under ablation-service/model/, see PROVENANCE.md there).
+  #
+  # ITS OWN IMAGE ON PURPOSE. It pins scikit-learn/xgboost/pandas to the exact
+  # versions that wrote the pickles, which want numpy>=2 — while the two YOLO
+  # services pin numpy<2 for the OpenCV/torch ABI. The two sets cannot share an
+  # image.
+  ablation-service:
+    build: ./ablation-service
+    container_name: firewatch-ablation
+    restart: unless-stopped
+    expose:
+      - "8023"
+    environment:
+      - FIRE_YOLO_URL=http://fire-detection-yolo-service:8000/detect
+      - VLM_DETAILED_URL=http://vlm-service:8019/describe-image-detailed/
+      - SENSOR_LATEST_URL=http://sensor-service:8022/api/sensors/latest
+    volumes:
+      # Real recordings are bind-mounted rather than uploaded: nginx caps
+      # bodies at 10M, and a recording is thousands of frames. Read-only, so a
+      # run can never modify its own input.
+      - ./ablation-data:/data:ro
+    depends_on:
+      - fire-detection-yolo-service
+      - vlm-service
+      - sensor-service
+
   # ── Mobile Alert Service (FCM push + app state) ───────────────
   # Holds zones/incidents/history, receives confirmed-fire events, sends push.
   # Publishes :8090 directly so the phone app can reach it over plain HTTP on
@@ -129,6 +158,10 @@ services:
       - alert-service
       - esp32-service
       - sensor-service
+      # Not optional: nginx resolves proxy_pass hostnames at config load and
+      # has no resolver, so a missing ablation-service stops nginx starting at
+      # all — taking the whole stack down, not just this one route.
+      - ablation-service
 
 volumes:
   alert-data:

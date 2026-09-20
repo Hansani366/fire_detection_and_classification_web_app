@@ -10,3 +10,9 @@ alert-service/*.db-shm
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Ablation recordings: bind-mounted into ablation-service, often GB of frames.
+# The README stays so the mount point exists on a fresh clone -- without it the
+# bind mount creates a root-owned directory instead.
+ablation-data/*
+!ablation-data/README.md

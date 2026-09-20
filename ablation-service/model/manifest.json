@@ -1,0 +1,118 @@
+{
+  "run_id": "20260920T122953Z",
+  "dataset_uri": "gs://local-run-no-bucket/fire_classification/dataset/fire_multimodal_v3.csv",
+  "dataset_rows": 86400,
+  "dataset_experiments": 480,
+  "data_source": [
+    "cfast_v3"
+  ],
+  "synthetic_warning": "Scores describe a synthetic generator, not real fire behaviour.",
+  "selected_model": "mlp/fusion_stacked",
+  "selection_split": "validation",
+  "config": {
+    "random_seed": 42,
+    "n_folds": 5,
+    "roll_windows": [
+      5,
+      15
+    ],
+    "recompute_persistence": true,
+    "persistence_window": 25,
+    "yolo_fire_threshold": 0.5,
+    "smooth_window": 5,
+    "gate_threshold": 0.55,
+    "excluded_as_leaky": [
+      "mq2_baseline",
+      "mq7_baseline",
+      "ambient_lux",
+      "cfast_layer_height_m",
+      "cfast_hrr_kw"
+    ]
+  },
+  "feature_groups": {
+    "yolo": [
+      "yolo_fire_conf",
+      "yolo_smoke_conf",
+      "fire_area_ratio",
+      "smoke_area_ratio",
+      "flame_flicker_hz",
+      "yolo_detected"
+    ],
+    "vlm": [
+      "vlm_invoked",
+      "vlm_confirmed",
+      "vlm_staleness_s",
+      "vlm_flame_conf",
+      "vlm_smoke_conf",
+      "vlm_smoke_darkness",
+      "vlm_flame_colour_index",
+      "vlm_gas_source_conf",
+      "vlm_liquid_source_conf",
+      "vlm_solid_source_conf",
+      "vlm_visual_conf"
+    ],
+    "sensor": [
+      "mq2_delta",
+      "mq2_rate",
+      "mq7_delta",
+      "mq7_rate",
+      "mq_co_ratio",
+      "flame_value",
+      "flame_present",
+      "temperature_c",
+      "humidity_pct",
+      "temperature_rate"
+    ],
+    "persistence_vision": [
+      "fire_persistence"
+    ],
+    "persistence_sensor": [
+      "sensor_persistence"
+    ],
+    "temporal_base": {
+      "vision": [
+        "yolo_fire_conf",
+        "yolo_smoke_conf",
+        "fire_area_ratio",
+        "smoke_area_ratio",
+        "vlm_smoke_darkness",
+        "vlm_flame_colour_index",
+        "vlm_gas_source_conf",
+        "vlm_liquid_source_conf",
+        "vlm_solid_source_conf"
+      ],
+      "sensor": [
+        "mq2_delta",
+        "mq7_delta",
+        "mq_co_ratio",
+        "flame_value",
+        "temperature_c"
+      ]
+    },
+    "clock": [
+      "window_idx",
+      "elapsed_s"
+    ],
+    "sensor_probability": [
+      "sensor_p_no_fire",
+      "sensor_p_gas_fire",
+      "sensor_p_liquid_fuel",
+      "sensor_p_solid_combustible"
+    ]
+  },
+  "class_names": [
+    "no_fire",
+    "gas_fire",
+    "liquid_fuel",
+    "solid_combustible"
+  ],
+  "inference_latency": {
+    "median_ms_per_window": 0.004646117216427431,
+    "p95_ms_per_window": 0.005509002899320539
+  },
+  "library_versions": {
+    "sklearn": "1.9.1",
+    "xgboost": "2.0.3",
+    "pandas": "3.0.6"
+  }
+}
