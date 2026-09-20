@@ -152,7 +152,14 @@ class VlmHold:
     def __init__(self, cooldown_s: float = K.VLM_COOLDOWN_S):
         self.cooldown_windows = max(1, round(cooldown_s * K.WINDOW_HZ))
         self._held: dict[str, float] | None = None
-        self._windows_since = 0
+        # Two clocks, and they are not the same one. `_since_success` ages the
+        # held verdict and becomes vlm_staleness_s. `_since_attempt` paces the
+        # calls. Using the success clock for both means a VLM that is failing
+        # -- a bad API key, an outage, a quota wall -- never sets the hold, so
+        # it looks permanently due and gets hammered once per window until
+        # someone notices the bill. The cooldown has to apply to attempts.
+        self._since_success = 0
+        self._since_attempt: int | None = None
         self.invocations = 0
         self.errors = 0
 
@@ -165,24 +172,35 @@ class VlmHold:
         """
         if not gated:
             return False
-        if self._held is None:
+        if self._since_attempt is None:
             return True
-        return self._windows_since >= self.cooldown_windows
+        return self._since_attempt >= self.cooldown_windows
 
     def observe(self, detail: dict) -> None:
         """Record a successful call. Resets staleness to zero."""
         self._held = to_channels(detail)
-        self._windows_since = 0
+        self._since_success = 0
+        self._since_attempt = 0
         self.invocations += 1
 
     def failed(self) -> None:
-        """Record a call that did not complete. Deliberately keeps the hold."""
+        """Record a call that did not complete.
+
+        Deliberately keeps the hold and keeps ageing it -- an error is not an
+        observation, and zeroing the channels mid-session would invent a
+        confident "saw nothing" from a request that never completed. But it
+        does reset the attempt clock, so a failing VLM is retried on the
+        cooldown rather than every window.
+        """
+        self._since_attempt = 0
         self.errors += 1
 
     def tick(self) -> None:
         """Advance one window. Call once per window, after observe/failed."""
         if self._held is not None:
-            self._windows_since += 1
+            self._since_success += 1
+        if self._since_attempt is not None:
+            self._since_attempt += 1
 
     def channels(self, invoked_this_window: bool = False) -> dict[str, float]:
         if self._held is None:
@@ -190,5 +208,5 @@ class VlmHold:
         return {
             **self._held,
             "vlm_invoked": 1.0 if invoked_this_window else 0.0,
-            "vlm_staleness_s": float(self._windows_since) / K.WINDOW_HZ,
+            "vlm_staleness_s": float(self._since_success) / K.WINDOW_HZ,
         }

@@ -44,14 +44,16 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 import constants as K
+import live as L
 import runs as R
 from fire_classifier import FireClassifier
+from sensor_adapter import SensorGapError
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("ablation")
@@ -63,6 +65,14 @@ MODEL_DIR = Path(__file__).resolve().parent / "model"
 # The escape hatch exists for debugging and is reported in /health, so a result
 # exported from a drifted container can never look clean.
 ALLOW_VERSION_DRIFT = os.getenv("ABLATION_ALLOW_VERSION_DRIFT", "") == "1"
+
+# Peers, addressed by Docker service name. Set in docker-compose.yml.
+FIRE_YOLO_URL = os.getenv("FIRE_YOLO_URL",
+                          "http://fire-detection-yolo-service:8000/detect")
+VLM_DETAILED_URL = os.getenv("VLM_DETAILED_URL",
+                             "http://vlm-service:8019/describe-image-detailed/")
+SENSOR_LATEST_URL = os.getenv("SENSOR_LATEST_URL",
+                              "http://sensor-service:8022/api/sensors/latest")
 
 # Populated at startup by _load(). Everything downstream reads these.
 STATE: dict = {}
@@ -317,7 +327,7 @@ async def create_run(body: RunIn):
     try:
         run_id = await R.submit(body.dataset_id, sorted(set(body.combos)),
                                 STATE["clf"], STATE["manifest"], body.experiment_ids,
-                                body.ground_truth)
+                                body.ground_truth, FIRE_YOLO_URL, VLM_DETAILED_URL)
     except KeyError:
         raise HTTPException(404, f"unknown dataset: {body.dataset_id}")
     return {"run_id": run_id, "status": "queued"}
@@ -376,3 +386,82 @@ async def delete_run(run_id: str):
     if R.RUNS.pop(run_id, None) is None:
         raise HTTPException(404, "no such run")
     return {"deleted": run_id}
+
+
+# ── Live sessions ────────────────────────────────────────────────────────────
+
+class SessionIn(BaseModel):
+    sensor_source: str = "node"          # node | manual | none
+    device_id: str | None = None
+    manual: dict | None = None           # {readings: {...}, mq2_baseline, mq7_baseline}
+    baseline_mode: str = "quiet_prefix"  # quiet_prefix | running_min | manual
+    note: str = ""
+
+
+@app.post("/api/ablation/live/sessions", status_code=201)
+async def create_session(body: SessionIn):
+    if body.sensor_source not in ("node", "manual", "none"):
+        raise HTTPException(400, "sensor_source must be node, manual or none")
+    try:
+        session = L.create(body.sensor_source, body.device_id, body.manual,
+                           body.baseline_mode, body.note)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return session.status()
+
+
+@app.post("/api/ablation/live/sessions/{sid}/tick")
+async def live_tick(sid: str, file: UploadFile = File(...),
+                    frame_w: int = Form(640), frame_h: int = Form(480),
+                    flicker_hz: float = Form(K.FLICKER_QUIET_HZ)):
+    """One 1 Hz window: the browser sends the frame, the service does the rest.
+
+    The browser posts the JPEG it already has rather than calling the detectors
+    itself, so this service decides whether to spend a VLM call and one sample
+    serves every combination whose gate fired on this window.
+    """
+    session = L.SESSIONS.get(sid)
+    if session is None:
+        raise HTTPException(404, "no such session")
+    try:
+        return await L.tick(
+            session, await file.read(), frame_w, frame_h, flicker_hz,
+            FIRE_YOLO_URL, VLM_DETAILED_URL, SENSOR_LATEST_URL,
+            STATE["clf"], STATE["manifest"])
+    except SensorGapError as exc:
+        raise HTTPException(409, str(exc))
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc))
+
+
+@app.get("/api/ablation/live/sessions")
+async def list_sessions():
+    return {"sessions": [s.status() for s in L.SESSIONS.values()]}
+
+
+@app.get("/api/ablation/live/sessions/{sid}")
+async def get_session(sid: str):
+    session = L.SESSIONS.get(sid)
+    if session is None:
+        raise HTTPException(404, "no such session")
+    return {**session.status(), "last": session.last}
+
+
+@app.get("/api/ablation/live/sessions/{sid}/export.csv",
+         response_class=PlainTextResponse)
+async def export_session(sid: str):
+    session = L.SESSIONS.get(sid)
+    if session is None:
+        raise HTTPException(404, "no such session")
+    return PlainTextResponse(
+        L.export_csv(session),
+        headers={"content-disposition": f'attachment; filename="{sid}.csv"'})
+
+
+@app.delete("/api/ablation/live/sessions/{sid}")
+async def delete_session(sid: str):
+    if L.SESSIONS.pop(sid, None) is None:
+        raise HTTPException(404, "no such session")
+    return {"deleted": sid}

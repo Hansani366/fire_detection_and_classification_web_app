@@ -12,8 +12,18 @@ Browser ──HTTPS──▶ nginx (443/80) ──▶ Frontend (3000) ──┬�
                                                          ├─▶ VLM Service   (8019)
                                                          └─▶ Alert Service (8090) ──FCM──▶ 📱 Mobile App
                                     ├─▶ ESP32 Bridge (8021) ──HTTP──▶ 📷 ESP32-CAM (on your LAN)
-                                    └─▶ Sensor Bridge (8022) ◀──HTTP── 🌡️ ESP32 sensor nodes (push)
+                                    ├─▶ Sensor Bridge (8022) ◀──HTTP── 🌡️ ESP32 sensor nodes (push)
+                                    └─▶ Ablation Service (8023) ─┬─▶ Fire Detection YOLO (8000)
+                                                                 ├─▶ VLM Service (8019)
+                                                                 └─▶ Sensor Bridge (8022)
 ```
+
+The dashboard has **two pages**, switched from the nav bar in the top bar:
+
+| Page | What it is |
+|---|---|
+| `/` | **Live Monitoring** — the running system: camera, detectors, alarm, sensors |
+| `/ablation` | **Ablation Tests** — the six sensing combinations, scored for the research paper |
 
 **Flow:** Camera (laptop webcam **or** ESP32-CAM) → one frame is scored by **both** detectors concurrently → fire/smoke (≥35% confidence) goes to the VLM for confirmation → 🚨 Alarm when **both agree** → Alert Service records the incident, **with the people count**, and pushes an FCM notification to the mobile app.
 
@@ -38,6 +48,8 @@ mid-demo-vision-system/
 ├── alert-service/     # Mobile alert backend — FCM push + zones/incidents/history (SQLite)
 ├── esp32-service/     # ESP32-CAM bridge — relays the board's MJPEG stream same-origin
 ├── sensor-service/    # ESP32 sensor bridge — receives MQ-2 / MQ-7 / flame / DHT22 telemetry
+├── ablation-service/  # Six-combination ablation testing (trained fusion + sensor models)
+├── ablation-data/     # Your own recorded experiments (git-ignored; see its README)
 ├── nginx/             # HTTPS reverse proxy (self-signed cert)
 ├── .env               # Your API keys (never commit this)
 ├── sample.env         # Template for .env
@@ -266,6 +278,106 @@ curl -s -o /dev/null -w '%{http_code}\n' http://<this-laptop-ip>:8022/health
 
 ---
 
+## Ablation testing
+
+Open **`https://localhost/ablation`**, or use the nav bar in the top left.
+
+The page answers one question: **what does each sensing modality actually contribute?** It scores six
+combinations against known ground truth and produces the table, the confusion matrices and the export
+a paper needs.
+
+| # | Combination | Decided by |
+|---|---|---|
+| 1 | sensors only | `sensor_model.joblib` |
+| 2 | YOLO only | documented rule |
+| 3 | VLM only | documented rule |
+| 4 | sensors + YOLO | documented rule |
+| 5 | VLM + YOLO | documented rule — the one the dashboard deploys today |
+| 6 | sensors + YOLO + VLM | `fusion_model.joblib` |
+
+Every rule is printed on the page, **rendered from the same frozen constants the service executes**,
+so what is printed and what ran cannot disagree. None of the thresholds is hand-picked: each comes
+from the model's `manifest.json` or from the dataset generator.
+
+### The two models
+
+Both are vendored under `ablation-service/model/` from the sibling repo `fire_classification_model`
+(see `ablation-service/model/PROVENANCE.md` for the exact source and checksums).
+
+**`sensor_model.joblib` is required, not optional.** The fusion model reads no raw sensor values at
+all — features 92–95 of its 96 are the sensor model's four class probabilities:
+
+```
+sensors ─▶ sensor_model (XGBoost, 53 features) ─▶ 4 probabilities ─┐
+                                                                    ├─▶ fusion_model ─▶ verdict
+vision  ─▶ 17 raw channels + 72 temporal features ─────────────────┘   (MLP, 96 features)
+```
+
+The service pins `scikit-learn==1.9.1`, `xgboost==2.0.3` and `pandas==3.0.6` — the exact versions that
+wrote the pickles — and **refuses to start** if the installed versions differ.
+
+### Batch tab
+
+Two kinds of dataset:
+
+- **Replay** — the 96 held-out CFAST test experiments, plus a 90-experiment out-of-distribution split
+  burning three fuels the model never saw. Runs in about a second.
+- **Your own recordings** — real frames through the real detectors. Drop them in `ablation-data/`;
+  the format is documented in [ablation-data/README.md](ablation-data/README.md).
+
+**Replayed results carry a loud SYNTHETIC banner and a column in every export.** Both models were
+trained on simulation, never on recorded fire, so a replayed accuracy figure describes the generator.
+Your own recordings are the result that actually matters.
+
+**Ground truth has two definitions, and the choice moves the numbers.** In the training data every row
+of a fire run carries that run's fuel label, including the 1,892 test rows where nothing is burning
+yet — so the model was *trained* to answer "fire" from the first second.
+
+| Mode | Meaning |
+|---|---|
+| **Strict** (default) | Pre-ignition windows are negatives. What a deployed detector should be judged on. |
+| **As trained** | The whole fire run is positive. Matches the dataset labels and the published `metrics.csv`. |
+
+### Live tab
+
+All six combinations scored side by side on the live camera and sensor nodes, at the models' 1 Hz rate.
+It shows **agreement, never accuracy** — nothing on a live feed carries a ground-truth label.
+
+The first 30 seconds measure the clean-air sensor baseline, and **no windows are scored until it is
+fixed**: the models need a delta above clean air, and a delta against an unknown baseline would poison
+every running maximum for the rest of the session. So **record at least 30 seconds of quiet before
+ignition**, in live sessions and in your own recordings alike.
+
+### Things the page will tell you, and why they matter
+
+- **Almost every false alarm is a warm-up artifact.** The models' longest features are a 15-window
+  rolling statistic and a 25-window persistence mean. Until those fill, they are reading a history
+  that does not exist. Measured on the test split, combination 6's false-alarm rate in a quiet room is
+  0.74 between seconds 5 and 30 and **exactly 0.00 after second 60**. The practical fix is to ignore
+  the first minute of a session, not to retrain.
+- **The fusion model's gain over sensors alone is one event in 96.** Every comparison against
+  combination 6 therefore carries a paired McNemar test and the absolute event count, not just a
+  percentage.
+- **Combination 6 contains combination 1.** Four of its features are the sensor model's output, so
+  "fusion beats sensors" is partly tautological. The informative comparisons are 6 against 4 and 6
+  against 2.
+- **Confidence does not detect unfamiliar fuels** (AUROC 0.486 — chance). The out-of-distribution
+  split shows what that costs.
+
+```bash
+# Run all six combinations over the held-out test split and get the CSV
+RID=$(curl -sk -X POST https://localhost/api/ablation/runs \
+        -H 'content-type: application/json' \
+        -d '{"dataset_id":"test_split"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["run_id"])')
+curl -sk "https://localhost/api/ablation/runs/$RID/export.csv?level=event"
+
+# The JSON export additionally carries model checksums, library versions and the
+# full frozen config — this is the artifact to cite.
+curl -sk "https://localhost/api/ablation/runs/$RID/export.json"
+```
+
+---
+
 ## Health Checks
 
 The alert service is published on the host, so hit it directly. YOLO and VLM are
@@ -276,6 +388,7 @@ curl -s http://localhost:8090/health                                      # Aler
 curl -s http://localhost:8022/health                                      # Sensor bridge
 docker compose exec human-detection-yolo-service curl -s http://localhost:8001/health
 docker compose exec esp32-service curl -s http://localhost:8021/health    # ESP32 bridge
+curl -sk https://localhost/api/ablation/health                            # Ablation service
 ```
 
 > `fire-detection-yolo-service` and `vlm-service` have **no `curl`** in their images, so

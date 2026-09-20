@@ -38,6 +38,7 @@ import pandas as pd
 import combos
 import constants as K
 import metrics as M
+import recordings
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
@@ -83,6 +84,17 @@ def _sha256_file(path: Path) -> str:
 
 
 def list_datasets() -> list[dict]:
+    out = list(_replay_datasets())
+    try:
+        out.extend(recordings.list_recordings())
+    except Exception as exc:                                    # noqa: BLE001
+        # A malformed recording folder must not hide the replay sets, which
+        # are the ones that always work.
+        out.append({"id": "rec/?", "kind": "recording", "error": str(exc)})
+    return out
+
+
+def _replay_datasets():
     out = []
     for ds_id, spec in REPLAY_SETS.items():
         path = DATA_DIR / spec["file"]
@@ -103,6 +115,29 @@ def list_datasets() -> list[dict]:
             "degenerate_binary": spec.get("degenerate_binary", False),
         })
     return out
+
+
+def _score_frame(frame: pd.DataFrame, dataset: dict, combo_ids: list[int],
+                 clf, manifest: dict, ground_truth: str) -> dict:
+    """Features -> six combinations -> metrics. Pure CPU; runs off the loop."""
+    timings = {}
+    t0 = time.perf_counter()
+    features = clf.build_features(frame)
+    timings["build_features_ms"] = round((time.perf_counter() - t0) * 1000)
+
+    t0 = time.perf_counter()
+    scored = combos.score_all(features, manifest, clf, combo_ids)
+    timings["score_ms"] = round((time.perf_counter() - t0) * 1000)
+
+    truth = M.build_truth(frame, features, ground_truth)
+    t0 = time.perf_counter()
+    result = M.evaluate(scored, truth, clf, manifest, dataset["synthetic"])
+    timings["evaluate_ms"] = round((time.perf_counter() - t0) * 1000)
+
+    result["timings"] = timings
+    result["dataset"] = dataset
+    result["_windows"] = _window_table(frame, features, truth, scored, clf)
+    return result
 
 
 def _run_sync(dataset_id: str, combo_ids: list[int], clf, manifest: dict,
@@ -168,25 +203,77 @@ def _window_table(frame, features, truth, scored, clf) -> list[dict]:
     return pd.DataFrame(rows).to_dict("records")
 
 
+async def _run_recordings(dataset_id: str, combo_ids: list[int], clf, manifest: dict,
+                          ground_truth: str, run: dict, yolo_url: str,
+                          vlm_url: str) -> dict:
+    """Score one recording folder, or every one of them with `rec/*`.
+
+    The frame build is I/O bound -- one YOLO call per second of footage plus a
+    VLM call per cooldown -- so it stays on the event loop, and only the pandas
+    feature build is handed to a thread.
+    """
+    name = dataset_id.split("/", 1)[1]
+    root = recordings.DATA_ROOT
+    folders = ([p for p in sorted(root.iterdir()) if p.is_dir()] if name == "*"
+               else [root / name])
+
+    frames, metas = [], []
+    for i, folder in enumerate(folders):
+        if not folder.exists():
+            raise KeyError(dataset_id)
+        run["progress"] = {"stage": f"scoring {folder.name}",
+                           "done": i, "total": len(folders)}
+
+        def report(done, total, folder=folder, i=i):
+            run["progress"] = {"stage": f"{folder.name}: {done}/{total}s",
+                               "done": i, "total": len(folders)}
+
+        frame, meta = await recordings.build_frame(folder, clf, yolo_url, vlm_url,
+                                                   progress=report)
+        frames.append(frame)
+        metas.append({"experiment_id": folder.name, **{
+            k: v for k, v in meta.items() if k in
+            ("label", "frame_rate_hz", "warnings", "vlm_invocations", "baseline")}})
+
+    combined = pd.concat(frames, ignore_index=True)
+    dataset = {
+        "id": dataset_id, "kind": "recording",
+        "label": f"{len(folders)} recording(s)", "synthetic": False,
+        "note": "Your own recordings, scored through the real detectors.",
+        "experiments": metas,
+    }
+    run["progress"] = {"stage": "computing metrics", "done": len(folders),
+                       "total": len(folders)}
+    return await asyncio.to_thread(_score_frame, combined, dataset, combo_ids,
+                                   clf, manifest, ground_truth)
+
+
 async def submit(dataset_id: str, combo_ids: list[int], clf, manifest: dict,
                  experiment_ids: list[str] | None = None,
-                 ground_truth: str = "strict") -> str:
-    if dataset_id not in REPLAY_SETS:
+                 ground_truth: str = "strict",
+                 yolo_url: str = "", vlm_url: str = "") -> str:
+    is_recording = dataset_id.startswith("rec/")
+    if not is_recording and dataset_id not in REPLAY_SETS:
         raise KeyError(dataset_id)
     run_id = f"run_{uuid.uuid4().hex[:10]}"
     RUNS[run_id] = {
         "run_id": run_id, "status": "queued", "dataset_id": dataset_id,
         "combos": combo_ids, "ground_truth": ground_truth,
-        "started_at": _now(), "finished_at": None,
+        "started_at": _now(), "finished_at": None, "progress": None,
         "error": None, "result": None,
     }
 
     async def _go():
-        RUNS[run_id]["status"] = "running"
+        run = RUNS[run_id]
+        run["status"] = "running"
         try:
-            result = await asyncio.to_thread(
-                _run_sync, dataset_id, combo_ids, clf, manifest, experiment_ids,
-                ground_truth)
+            if is_recording:
+                result = await _run_recordings(dataset_id, combo_ids, clf, manifest,
+                                               ground_truth, run, yolo_url, vlm_url)
+            else:
+                result = await asyncio.to_thread(
+                    _run_sync, dataset_id, combo_ids, clf, manifest, experiment_ids,
+                    ground_truth)
             RUNS[run_id]["result"] = result
             RUNS[run_id]["status"] = "done"
         except Exception as exc:                       # noqa: BLE001

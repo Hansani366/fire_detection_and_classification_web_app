@@ -194,6 +194,48 @@ td.zero { color: var(--ink3); }
 .lim-title { font-family: var(--display); font-size: 13px; font-weight: 700; margin-bottom: 3px; }
 .lim-detail { font-size: 12.5px; color: var(--ink2); line-height: 1.6; }
 
+/* ═══════════════════════════════════════════════════════════
+   LIVE TAB
+═══════════════════════════════════════════════════════════ */
+.live-grid { display: grid; grid-template-columns: minmax(280px, 420px) 1fr; gap: 18px; }
+@media (max-width: 860px) { .live-grid { grid-template-columns: 1fr; } }
+
+.live-cam-wrap {
+  position: relative; width: 100%; aspect-ratio: 4/3; border-radius: 12px;
+  overflow: hidden; background: #0b0d12;
+}
+.live-cam-wrap video, .live-cam-wrap img, .live-cam-wrap canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+}
+.live-cam-wrap video, .live-cam-wrap img { display: none; }
+.live-cam-wrap.src-webcam video, .live-cam-wrap.src-esp32 img { display: block; }
+.live-meta {
+  margin-top: 10px; font-size: 11.5px; color: var(--ink3);
+  font-family: var(--display); font-variant-numeric: tabular-nums;
+  display: flex; flex-wrap: wrap; gap: 10px;
+}
+
+.verdict {
+  display: flex; align-items: center; gap: 11px; padding: 11px 13px;
+  border: 1px solid var(--line); border-radius: 11px; margin-bottom: 8px;
+  transition: background .2s, border-color .2s;
+}
+.verdict.fire { background: var(--danger-bg); border-color: var(--danger); }
+.verdict-name { font-family: var(--display); font-size: 13px; font-weight: 700; }
+.verdict-sub { font-size: 11px; color: var(--ink3); margin-top: 2px; }
+.verdict-right { margin-left: auto; text-align: right; }
+.verdict-state {
+  font-family: var(--display); font-size: 12px; font-weight: 800; letter-spacing: .04em;
+  padding: 4px 9px; border-radius: 7px; background: var(--safe-bg); color: var(--safe-ink);
+}
+.verdict.fire .verdict-state { background: var(--danger); color: #fff; }
+.verdict-score {
+  font-family: var(--display); font-variant-numeric: tabular-nums;
+  font-size: 11px; color: var(--ink3); margin-top: 3px;
+}
+.bar { height: 3px; border-radius: 2px; background: var(--neutral-bg); margin-top: 7px; }
+.bar > i { display: block; height: 100%; border-radius: 2px; background: var(--brand); }
+
 .empty { text-align: center; padding: 44px 20px; color: var(--ink3); font-size: 13px; }
 .note { font-size: 12.5px; color: var(--ink2); line-height: 1.6;
         background: var(--neutral-bg); border-radius: 10px; padding: 11px 13px; margin-top: 12px; }
@@ -296,15 +338,63 @@ td.zero { color: var(--ink3); }
   <div class="panel" id="panel-live">
     <div class="fw-card">
       <div class="card-head">
-        <div class="card-title">Live comparison <span class="soon">not yet wired</span></div>
+        <div class="card-title">Live comparison</div>
+        <div class="card-head-right card-sub" id="live-clock"></div>
       </div>
-      <div class="card-sub">
-        This tab will score all six combinations side by side on the live camera and sensor
-        nodes, at the models' 1&nbsp;Hz rate. It shows agreement and disagreement between the
-        combinations — <b>never accuracy</b>, because nothing on a live feed carries a
-        ground-truth label.
+      <div class="card-sub" style="margin-bottom:16px">
+        All six combinations scored side by side on the live feed, at the models' 1&nbsp;Hz rate.
+        This shows <b>agreement</b>, never accuracy — nothing on a live feed carries a
+        ground-truth label, so there is nothing to be right or wrong about.
       </div>
-      <div class="empty">The live scoring path is still being built.</div>
+
+      <div class="ctl-grid">
+        <div>
+          <div class="ctl-label">Camera</div>
+          <select id="live-cam">
+            <option value="webcam">Laptop webcam</option>
+            <option value="esp32">ESP32-CAM</option>
+          </select>
+          <input type="text" id="live-host" placeholder="ESP32 host (blank = from .env)"
+                 style="margin-top:8px;display:none" />
+        </div>
+        <div>
+          <div class="ctl-label">Sensors</div>
+          <select id="live-sensors">
+            <option value="node">Live sensor node</option>
+            <option value="none">No sensors (combinations 1, 4, 6 will idle)</option>
+          </select>
+          <div class="card-sub" style="margin-top:9px">
+            The first <b id="baseline-s">30</b>&nbsp;s measure the clean-air baseline. No windows
+            are scored until it is fixed — a delta against an unknown baseline would poison every
+            running maximum for the rest of the session.
+          </div>
+        </div>
+      </div>
+
+      <div class="run-row">
+        <button class="primary" id="btn-live-start">Start session</button>
+        <button class="ghost" id="btn-live-stop" disabled>Stop</button>
+        <button class="ghost" id="btn-live-csv" disabled>Export CSV</button>
+        <span class="run-status" id="live-status">idle</span>
+      </div>
+    </div>
+
+    <div class="fw-card" id="live-view" style="display:none">
+      <div class="card-head">
+        <div class="card-title">What each combination says right now</div>
+        <div class="card-head-right card-sub" id="live-agree"></div>
+      </div>
+      <div class="live-grid">
+        <div>
+          <div class="live-cam-wrap" id="live-cam-wrap">
+            <video id="live-video" autoplay muted playsinline></video>
+            <img id="live-img" alt="" />
+            <canvas id="live-overlay"></canvas>
+          </div>
+          <div class="live-meta" id="live-meta"></div>
+        </div>
+        <div id="live-verdicts"></div>
+      </div>
     </div>
   </div>
 
@@ -332,6 +422,12 @@ td.zero { color: var(--ink3); }
 
 </div>
 
+<!-- Classic scripts, loaded before the inline one, same as the dashboard.
+     CameraSources is reused verbatim: the live tab needs exactly the
+     start/stop/isReady/nativeSize/drawInto interface the dashboard defined,
+     so nothing here knows which camera is selected. -->
+<script src="/js/camera-sources.js"></script>
+<script src="/js/flicker.js"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════
    ABLATION PAGE
@@ -396,14 +492,40 @@ td.zero { color: var(--ink3); }
   }
 
   function renderDatasets() {
-    $('dataset').innerHTML = S.datasets.map((d) =>
-      `<option value="${esc(d.id)}">${esc(d.label)} — ${d.experiments} experiments</option>`).join('');
+    $('dataset').innerHTML = S.datasets.map((d) => {
+      const what = d.kind === 'recording'
+        ? `${d.label_name} — ${d.frames} frames, ${d.label || 'no label'}`
+        : `${d.label} — ${d.experiments} experiments`;
+      return `<option value="${esc(d.id)}">${d.kind === 'recording' ? '📹 ' : ''}${esc(what)}</option>`;
+    }).join('');
     showDatasetNote();
   }
 
   function showDatasetNote() {
     const d = S.datasets.find((x) => x.id === $('dataset').value);
-    $('dataset-note').innerHTML = d ? esc(d.note) : '';
+    if (!d) { $('dataset-note').innerHTML = ''; return; }
+
+    let html = '';
+    if (d.error) {
+      html += `<span style="color:var(--danger-ink)"><b>Cannot read this recording:</b> ${esc(d.error)}</span>`;
+    } else if (d.kind === 'recording') {
+      // Recordings are the result that matters, so say so plainly here rather
+      // than leaving the reader to infer it from the missing SYNTHETIC banner.
+      html += `<b>Your own recording — real detectors, real pixels.</b> `
+            + `${d.frames} frames at ${d.frame_rate_hz} Hz`
+            + (d.duration_s ? ` (${d.duration_s}s)` : '')
+            + `, labelled <code>${esc(d.label)}</code>`
+            + (d.ignition_offset_s !== null && d.ignition_offset_s !== undefined
+                ? `, ignition at ${d.ignition_offset_s}s` : '')
+            + `. This takes far longer than a replay: one detector call per second of
+               footage, plus a VLM call per cooldown.`;
+    } else {
+      html += esc(d.note);
+    }
+    (d.warnings || []).forEach((w) => {
+      html += `<div style="margin-top:7px;color:var(--warn-ink)">⚠ ${esc(w)}</div>`;
+    });
+    $('dataset-note').innerHTML = html;
   }
   $('dataset').addEventListener('change', showDatasetNote);
 
@@ -447,7 +569,9 @@ td.zero { color: var(--ink3); }
       try {
         const st = await get(`/runs/${S.runId}`);
         if (st.status === 'running' || st.status === 'queued') {
-          setStatus(`${st.status}…`);
+          // A recording reports which second it is on; a replay is over too
+          // fast for progress to mean anything.
+          setStatus(st.progress ? `${st.progress.stage}…` : `${st.status}…`);
           return;
         }
         clearInterval(S.polling);
@@ -475,6 +599,10 @@ td.zero { color: var(--ink3); }
   function renderResults(res) {
     const combos = Object.keys(res.combos).sort((a, b) => a - b);
     const degenerate = (S.datasets.find((d) => d.id === res.dataset.id) || {}).degenerate_binary;
+
+    // The banner is loud for replayed simulation and must NOT appear for real
+    // recordings, where the whole point is that the data is real.
+    $('synth-banner').style.display = res.synthetic ? '' : 'none';
 
     let html = `
       <div class="fw-card">
@@ -740,6 +868,223 @@ td.zero { color: var(--ink3); }
   });
   $('btn-run').addEventListener('click', run);
 
+  /* ═══════════════════════════════════════════════════════════
+     LIVE TAB
+
+     One tick per second, because that is the rate both models were
+     trained at — every temporal constant in the manifest counts samples,
+     not seconds, so ticking faster would silently rescale the 25-window
+     persistence mean and the rolling statistics.
+
+     The browser does only two things: capture the frame and measure
+     flicker at 16 Hz. YOLO, the VLM and the sensor read all happen in
+     the service, so the cooldown and the sample-and-hold sit next to the
+     state they mutate and one Gemini call serves every combination whose
+     gate fired.
+  ═══════════════════════════════════════════════════════════ */
+  const LIVE = {
+    session: null, source: null, meter: null, timer: null,
+    boxes: [], pending: false, gen: 0,
+  };
+
+  function camWrap() { return $('live-cam-wrap'); }
+
+  $('live-cam').addEventListener('change', () => {
+    $('live-host').style.display = $('live-cam').value === 'esp32' ? 'block' : 'none';
+  });
+
+  async function liveStart() {
+    $('btn-live-start').disabled = true;
+    liveStatus('starting…');
+    const gen = ++LIVE.gen;
+
+    try {
+      // 1. camera first — if it will not open there is no point in a session
+      const kind = $('live-cam').value;
+      camWrap().className = 'live-cam-wrap src-' + kind;
+      LIVE.source = kind === 'esp32'
+        ? CameraSources.createEsp32Source({
+            img: $('live-img'), host: $('live-host').value.trim(),
+            onError: () => liveStatus('camera dropped', true) })
+        : CameraSources.createWebcamSource({
+            video: $('live-video'),
+            onError: () => liveStatus('camera dropped', true) });
+      await LIVE.source.start();
+      if (gen !== LIVE.gen) { LIVE.source.stop(); return; }
+
+      // 2. the session
+      const r = await fetch(API + '/live/sessions', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          sensor_source: $('live-sensors').value,
+          baseline_mode: 'quiet_prefix',
+        }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      LIVE.session = (await r.json()).session_id;
+
+      // 3. the 16 Hz flicker sampler, reading the boxes the service returns
+      LIVE.meter = FlickerMeter.create({
+        sample: FlickerMeter.makeBoxSampler(
+          () => LIVE.source,
+          () => LIVE.boxes.filter((d) => String(d.label).toLowerCase() === 'fire'),
+          () => LIVE.source.nativeSize()),
+      });
+      LIVE.meter.start();
+
+      $('live-view').style.display = '';
+      $('btn-live-stop').disabled = false;
+      $('btn-live-csv').disabled = false;
+      LIVE.timer = setInterval(liveTick, 1000);
+      liveStatus('running');
+    } catch (e) {
+      liveStatus('could not start: ' + e.message, true);
+      $('btn-live-start').disabled = false;
+      if (LIVE.source) { try { LIVE.source.stop(); } catch (_) {} }
+    }
+  }
+
+  function liveStop() {
+    LIVE.gen++;                       // in-flight ticks discard their result
+    clearInterval(LIVE.timer); LIVE.timer = null;
+    if (LIVE.meter) { LIVE.meter.stop(); LIVE.meter = null; }
+    if (LIVE.source) { try { LIVE.source.stop(); } catch (_) {} LIVE.source = null; }
+    LIVE.boxes = [];
+    $('btn-live-start').disabled = false;
+    $('btn-live-stop').disabled = true;
+    liveStatus('stopped');
+  }
+
+  function liveStatus(text, isErr) {
+    const el = $('live-status');
+    el.textContent = text;
+    el.className = 'run-status' + (isErr ? ' err' : '');
+  }
+
+  const offscreen = document.createElement('canvas');
+  const offCtx = offscreen.getContext('2d');
+
+  async function liveTick() {
+    // Same guard the dashboard uses: a slow tick drops its turn rather than
+    // queueing, so the 1 Hz clock cannot run away from the service.
+    if (LIVE.pending || !LIVE.source || !LIVE.source.isReady()) return;
+    LIVE.pending = true;
+    const gen = LIVE.gen;
+
+    try {
+      const size = LIVE.source.nativeSize();
+      offscreen.width = size.w; offscreen.height = size.h;
+      LIVE.source.drawInto(offCtx, size.w, size.h);
+      const blob = await new Promise((res) => offscreen.toBlob(res, 'image/jpeg', 0.75));
+      if (!blob || gen !== LIVE.gen) return;
+
+      const form = new FormData();
+      form.append('file', blob, 'frame.jpg');
+      form.append('frame_w', size.w);
+      form.append('frame_h', size.h);
+      form.append('flicker_hz', LIVE.meter ? LIVE.meter.value() : 0.1);
+
+      const r = await fetch(`${API}/live/sessions/${LIVE.session}/tick`,
+                            { method: 'POST', body: form });
+      if (gen !== LIVE.gen) return;
+      if (!r.ok) {
+        const detail = await r.json().catch(() => ({}));
+        liveStatus(detail.detail || `HTTP ${r.status}`, true);
+        if (r.status === 409) liveStop();
+        return;
+      }
+      renderLive(await r.json(), size);
+    } catch (e) {
+      if (gen === LIVE.gen) liveStatus(e.message, true);
+    } finally {
+      LIVE.pending = false;
+    }
+  }
+
+  function renderLive(tick, size) {
+    $('live-clock').textContent =
+      `${tick.status.windows} / ${tick.status.max_windows} windows`;
+
+    if (tick.baselining) {
+      liveStatus(`measuring clean-air baseline — ${Math.ceil(tick.baseline_remaining_s)}s left`);
+      $('live-verdicts').innerHTML =
+        `<div class="empty">Waiting for the baseline.<br>
+         Nothing is scored until it is fixed, because a delta against an unknown
+         baseline would poison every running maximum for the rest of the session.</div>`;
+      return;
+    }
+    liveStatus('running');
+    LIVE.boxes = tick.detections || [];
+    drawBoxes(size);
+
+    const m = tick.status.sensor;
+    $('live-meta').innerHTML = [
+      `flicker ${tick.channels.flame_flicker_hz.toFixed(2)} Hz` +
+        (LIVE.meter && LIVE.meter.warmup()
+          ? ` (warming ${Math.round(LIVE.meter.progress() * 100)}%)` : ''),
+      `fire ${tick.channels.yolo_fire_conf.toFixed(2)} · smoke ${tick.channels.yolo_smoke_conf.toFixed(2)}`,
+      `VLM ${tick.status.vlm.invocations} calls` + (tick.vlm_invoked ? ' · just now' : ''),
+      m.sensor_stale ? 'sensors STALE' : `sensors ${m.samples} samples`,
+      `${tick.timings_ms.score_ms} ms score`,
+    ].map((t) => `<span>${esc(t)}</span>`).join('');
+
+    $('live-agree').innerHTML = tick.disagreeing_pairs
+      ? `<span class="sig yes">${tick.disagreeing_pairs} pairs disagree</span>`
+      : `<span class="sig ns">all six agree</span>`;
+
+    $('live-verdicts').innerHTML = Object.keys(tick.combos).sort((a, b) => a - b)
+      .map((c) => {
+        const v = tick.combos[c];
+        const pct = Math.max(0, Math.min(1, v.score));
+        const fuel = v.predicted_class
+          ? `<div class="verdict-sub">${esc(v.predicted_class)}` +
+            (v.low_confidence ? ' · low confidence' : '') + `</div>` : '';
+        return `<div class="verdict ${v.alarm ? 'fire' : ''}">
+          <span class="combo-num">${c}</span>
+          <div>
+            <div class="verdict-name">${esc(v.name)}</div>
+            ${fuel}
+            <div class="bar"><i style="width:${(pct * 100).toFixed(0)}%"></i></div>
+          </div>
+          <div class="verdict-right">
+            <span class="verdict-state">${v.alarm ? 'FIRE' : 'CLEAR'}</span>
+            <div class="verdict-score">${v.score.toFixed(3)}${
+              v.vlm_calls ? ` · ${v.vlm_calls} VLM` : ''}</div>
+          </div>
+        </div>`;
+      }).join('');
+  }
+
+  function drawBoxes(size) {
+    const canvas = $('live-overlay'), wrap = camWrap();
+    canvas.width = wrap.clientWidth; canvas.height = wrap.clientHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // object-fit: cover — the same transform the dashboard uses, so a box
+    // drawn here lands where the dashboard would draw it.
+    const scale = Math.max(canvas.width / size.w, canvas.height / size.h);
+    const ox = (canvas.width - size.w * scale) / 2;
+    const oy = (canvas.height - size.h * scale) / 2;
+
+    for (const d of LIVE.boxes) {
+      const isFire = String(d.label).toLowerCase() === 'fire';
+      ctx.strokeStyle = isFire ? '#E5342A' : '#F59E0B';
+      ctx.lineWidth = 2.5;
+      const [a, b, c2, d2] = d.box;
+      ctx.strokeRect(a * scale + ox, b * scale + oy,
+                     (c2 - a) * scale, (d2 - b) * scale);
+    }
+  }
+
+  $('btn-live-start').addEventListener('click', liveStart);
+  $('btn-live-stop').addEventListener('click', liveStop);
+  $('btn-live-csv').addEventListener('click', () => {
+    if (LIVE.session) window.location = `${API}/live/sessions/${LIVE.session}/export.csv`;
+  });
+  // Leaving the page with a webcam still held is rude; stop on unload.
+  window.addEventListener('beforeunload', () => { if (LIVE.timer) liveStop(); });
+
   // ── boot ─────────────────────────────────────────────────
   (async function boot() {
     try {
@@ -761,6 +1106,7 @@ td.zero { color: var(--ink3); }
       renderCombos();
       renderRules();
       renderLimitations(lims.limitations);
+      $('baseline-s').textContent = config.sensor_adapter.baseline_s;
     } catch (e) {
       $('results').innerHTML =
         `<div class="fw-card"><div class="empty">Could not reach the ablation service: ${esc(e.message)}</div></div>`;

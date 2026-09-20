@@ -17,3 +17,7 @@ fastapi
 uvicorn[standard]
 python-multipart
 httpx
+
+# Reads recorded frames so flame flicker can be measured from them. Only the
+# recordings path needs it -- replay and live never open an image here.
+pillow

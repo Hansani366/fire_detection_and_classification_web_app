@@ -76,10 +76,13 @@ SENSOR_AGREE_WINDOWS = 10
 # rather than three.
 HOLD_WINDOWS = 3
 
-# Binary decision point for the two probabilistic arms (1 and 6). Expressed as
-# 1 - p[no_fire] rather than argmax != no_fire so both arms yield a single
-# sweepable scalar and therefore an ROC curve, like the rule-based arms.
-BINARY_THRESHOLD = 0.5
+# NOT a decision threshold, despite the name it used to have. The two trained
+# arms decide by the model's own argmax, because thresholding 1 - p[no_fire]
+# is biased toward fire: the fire mass is split across three classes, so
+# [0.45, 0.20, 0.20, 0.15] clears 0.5 while the model's own answer is no_fire.
+# This value survives only as the midpoint drawn on the ROC curve, so a reader
+# can see where a naive threshold would have sat.
+ROC_MIDPOINT = 0.5
 
 # ── Flame flicker (generator: flicker ~ N(2.1, 0.45) when flame is visible) ──
 # SAMPLING RATE IS THE WHOLE POINT. Target flicker is ~2.1 Hz. The dashboard
@@ -180,28 +183,39 @@ def rule_text(manifest: dict) -> dict[int, dict]:
         1: {
             "name": COMBOS[1],
             "decided_by": "sensor_model.joblib (XGBClassifier, 53 features)",
-            "rule": f"p_fire = 1 - p[no_fire] > {BINARY_THRESHOLD}, "
-                    f"after the same causal {smooth}-window probability "
-                    f"smoothing the fusion model uses",
-            "score": "p_fire",
+            "rule": f"argmax(p) != no_fire, over the 4 class probabilities after "
+                    f"the same causal {smooth}-window smoothing the fusion model "
+                    f"uses",
+            "score": "1 - p[no_fire]  (for the ROC curve only)",
             "why": "The literal sensors-only arm is a trained model, not a hand "
                    "rule. metrics.csv already reports xgboost/sensor_only, so "
-                   "this number is externally checkable; and a hand rule here "
-                   "would be a strawman.",
+                   "this number is externally checkable, and a hand rule here "
+                   "would be a strawman. The decision is the model's own argmax "
+                   "rather than a threshold on 1 - p[no_fire]: the fire mass is "
+                   "split across three classes, so [0.45, 0.20, 0.20, 0.15] "
+                   "clears any such threshold while the model's own answer is "
+                   "no_fire. Scoring it that way made this arm alarm on every "
+                   "quiet experiment.",
         },
         2: {
             "name": COMBOS[2],
             "decided_by": "rule over fire-detection-yolo-service output",
-            "rule": f"(yolo_fire_conf >= {YOLO_DETECT_THRESHOLD} OR "
-                    f"yolo_smoke_conf >= {YOLO_DETECT_THRESHOLD}) "
-                    f"AND (fire_area_ratio >= {MIN_AREA_RATIO} OR "
-                    f"smoke_area_ratio >= {MIN_AREA_RATIO}) "
-                    f"AND fire_persistence >= {FIRE_PERSISTENCE_MIN}",
-            "score": f"fire_persistence at the {YOLO_DETECT_THRESHOLD} gate",
+            "rule": f"detected = max(yolo_fire_conf, yolo_smoke_conf) >= "
+                    f"{YOLO_DETECT_THRESHOLD} AND (fire_area_ratio >= "
+                    f"{MIN_AREA_RATIO} OR smoke_area_ratio >= {MIN_AREA_RATIO})\n"
+                    f"alarm   = detected AND mean(detected over the last {pwin} "
+                    f"windows) >= {FIRE_PERSISTENCE_MIN}",
+            "score": f"mean(max(fire, smoke) confidence) over {pwin} windows",
             "why": f"{YOLO_DETECT_THRESHOLD} is the generator's "
                    f"YOLO_DETECT_THRESHOLD and the dashboard's MIN_CONF. "
                    f"{FIRE_PERSISTENCE_MIN} = 5 of the manifest's {pwin} "
-                   f"persistence windows at its yolo_fire_threshold {ythr}.",
+                   f"persistence windows. Persistence is measured on THIS "
+                   f"rule's own detection, not on the model's fire_persistence "
+                   f"feature: that feature counts yolo_fire_conf > {ythr}, a "
+                   f"different channel at a different threshold, and in this "
+                   f"data the fire channel's median on burning windows is 0.044 "
+                   f"while smoke carries the signal — so borrowing it rejected "
+                   f"two thirds of the windows this rule had already accepted.",
         },
         3: {
             "name": COMBOS[3],
@@ -240,10 +254,10 @@ def rule_text(manifest: dict) -> dict[int, dict]:
             "name": COMBOS[6],
             "decided_by": "fusion_model.joblib (StandardScaler -> MLP(128,64), "
                           "96 features) over sensor_model.joblib",
-            "rule": f"1 - p[no_fire] > {BINARY_THRESHOLD} after the manifest's "
-                    f"causal {smooth}-window smoothing; the 4-class fuel label "
-                    f"is the argmax of the same smoothed vector",
-            "score": "1 - p[no_fire]",
+            "rule": f"argmax(p) != no_fire, after the manifest's causal "
+                    f"{smooth}-window smoothing; the 4-class fuel label is the "
+                    f"argmax of that same smoothed vector",
+            "score": "1 - p[no_fire]  (for the ROC curve only)",
             "why": "The only combination that uses a trained fusion model. Note "
                    "it CONTAINS combination 1: four of its 96 features are "
                    "sensor_model's probabilities, so 'fusion beats sensors' is "
@@ -269,7 +283,8 @@ def describe(manifest: dict) -> dict:
             "vlm_cooldown_s": VLM_COOLDOWN_S,
             "sensor_agree_windows": SENSOR_AGREE_WINDOWS,
             "hold_windows": HOLD_WINDOWS,
-            "binary_threshold": BINARY_THRESHOLD,
+            "roc_midpoint": ROC_MIDPOINT,
+            "binary_decision": "argmax != no_fire (trained arms 1 and 6)",
         },
         "flicker": {
             "sample_hz": FLICKER_SAMPLE_HZ,
