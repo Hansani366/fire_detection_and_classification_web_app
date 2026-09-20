@@ -89,12 +89,50 @@ def _smooth(value: pd.Series, groups: pd.Series, window: int) -> pd.Series:
 
 # ── the six arms ─────────────────────────────────────────────────────────────
 
-def combo1_sensors(features: pd.DataFrame, manifest: dict) -> tuple[pd.Series, pd.Series]:
-    """Sensors only — sensor_model.joblib, read from the spliced columns."""
-    groups = features[GROUP]
-    p_fire = 1.0 - features["sensor_p_no_fire"]
-    score = _smooth(p_fire, groups, manifest["config"]["smooth_window"])
-    return score > K.BINARY_THRESHOLD, score
+def _collapse_to_binary(proba: pd.DataFrame, classes: list[str], groups: pd.Series,
+                        window: int) -> tuple[pd.Series, pd.Series]:
+    """A 4-class probability vector -> (fire/no-fire alarm, sweepable score).
+
+    THE DECISION IS THE MODEL'S OWN ARGMAX, NOT A THRESHOLD ON 1 - p[no_fire].
+    Those two are not the same, and the difference is not small. The fire mass
+    is split across THREE classes, so a vector like
+    [0.45 no_fire, 0.20, 0.20, 0.15] has `1 - p[no_fire] = 0.55` -- over any
+    sensible threshold -- while the model's own answer is `no_fire`. Scoring
+    the threshold form made both trained arms alarm on all 24 quiet
+    experiments, while their 4-class confusion matrices classified those same
+    24 correctly. Only one of those can be true, and the threshold was wrong.
+
+    Using argmax also keeps this page consistent with
+    trained_model_v3/metrics/metrics.csv, which is what makes our numbers
+    externally checkable.
+
+    The score stays `1 - p[no_fire]` because an ROC curve needs a continuous,
+    monotone quantity. Note the operating point marked on that curve is the
+    argmax decision, which is not a fixed threshold on the score -- so the
+    curve describes the ranking, and the table describes the model's own
+    decision.
+    """
+    smoothed = pd.concat(
+        [_smooth(proba[c], groups, window).rename(c) for c in proba.columns], axis=1)
+    no_fire_idx = classes.index("no_fire")
+    winner = smoothed.to_numpy().argmax(axis=1)
+    alarm = pd.Series(winner != no_fire_idx, index=proba.index)
+    score = 1.0 - smoothed.iloc[:, no_fire_idx]
+    return alarm, score.rename(None)
+
+
+def combo1_sensors(features: pd.DataFrame, manifest: dict,
+                   classes: list[str]) -> tuple[pd.Series, pd.Series]:
+    """Sensors only — sensor_model.joblib, read from the spliced columns.
+
+    build_features() has already run sensor_model.predict_proba to feed the
+    fusion model, so this reads those columns instead of calling it again: one
+    inference, two arms, and no way for the two to disagree.
+    """
+    proba = features[[f"sensor_p_{c}" for c in classes]]
+    proba.columns = list(classes)
+    return _collapse_to_binary(proba, list(classes), features[GROUP],
+                               manifest["config"]["smooth_window"])
 
 
 def combo2_yolo(features: pd.DataFrame, manifest: dict) -> tuple[pd.Series, pd.Series]:
@@ -183,8 +221,11 @@ def combo6_fusion(
     frame["confidence"] = proba.max(axis=1)
     frame["low_confidence"] = frame["confidence"] < manifest["config"]["gate_threshold"]
 
-    score = 1.0 - frame["p_no_fire"]
-    return score > K.BINARY_THRESHOLD, score, frame
+    # Already smoothed above, so collapse without smoothing twice.
+    no_fire_idx = clf.classes.index("no_fire")
+    alarm = pd.Series(proba.argmax(axis=1) != no_fire_idx, index=features.index)
+    score = 1.0 - frame[f"p_{clf.classes[no_fire_idx]}"]
+    return alarm, score.rename(None), frame
 
 
 # ── orchestration ────────────────────────────────────────────────────────────
@@ -204,7 +245,7 @@ def score_all(
     fuel = None
 
     # 1 and 2 first: 4 and 5 are built from them, so they are computed once.
-    raw[1], score[1] = combo1_sensors(features, manifest)
+    raw[1], score[1] = combo1_sensors(features, manifest, clf.classes)
     raw[2], score[2] = combo2_yolo(features, manifest)
     raw[3], score[3] = combo3_vlm(features, manifest)
     raw[4], score[4] = combo4_sensors_yolo(

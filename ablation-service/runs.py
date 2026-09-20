@@ -106,7 +106,7 @@ def list_datasets() -> list[dict]:
 
 
 def _run_sync(dataset_id: str, combo_ids: list[int], clf, manifest: dict,
-              experiment_ids: list[str] | None) -> dict:
+              experiment_ids: list[str] | None, ground_truth: str = "strict") -> dict:
     """The whole evaluation, start to finish. Runs off the event loop."""
     spec = REPLAY_SETS[dataset_id]
     path = DATA_DIR / spec["file"]
@@ -125,7 +125,7 @@ def _run_sync(dataset_id: str, combo_ids: list[int], clf, manifest: dict,
     scored = combos.score_all(features, manifest, clf, combo_ids)
     timings["score_ms"] = round((time.perf_counter() - t0) * 1000)
 
-    truth = M.build_truth(frame, features)
+    truth = M.build_truth(frame, features, ground_truth)
     t0 = time.perf_counter()
     result = M.evaluate(scored, truth, clf, manifest, spec["synthetic"])
     timings["evaluate_ms"] = round((time.perf_counter() - t0) * 1000)
@@ -169,13 +169,15 @@ def _window_table(frame, features, truth, scored, clf) -> list[dict]:
 
 
 async def submit(dataset_id: str, combo_ids: list[int], clf, manifest: dict,
-                 experiment_ids: list[str] | None = None) -> str:
+                 experiment_ids: list[str] | None = None,
+                 ground_truth: str = "strict") -> str:
     if dataset_id not in REPLAY_SETS:
         raise KeyError(dataset_id)
     run_id = f"run_{uuid.uuid4().hex[:10]}"
     RUNS[run_id] = {
         "run_id": run_id, "status": "queued", "dataset_id": dataset_id,
-        "combos": combo_ids, "started_at": _now(), "finished_at": None,
+        "combos": combo_ids, "ground_truth": ground_truth,
+        "started_at": _now(), "finished_at": None,
         "error": None, "result": None,
     }
 
@@ -183,7 +185,8 @@ async def submit(dataset_id: str, combo_ids: list[int], clf, manifest: dict,
         RUNS[run_id]["status"] = "running"
         try:
             result = await asyncio.to_thread(
-                _run_sync, dataset_id, combo_ids, clf, manifest, experiment_ids)
+                _run_sync, dataset_id, combo_ids, clf, manifest, experiment_ids,
+                ground_truth)
             RUNS[run_id]["result"] = result
             RUNS[run_id]["status"] = "done"
         except Exception as exc:                       # noqa: BLE001

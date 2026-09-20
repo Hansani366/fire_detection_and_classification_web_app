@@ -130,4 +130,13 @@ async def proxy_describe(file: UploadFile = File(...)):
 async def root():
     return FileResponse("static/index.html")
 
+
+# Declared explicitly, and above the mount, for the same reason "/" is: the
+# StaticFiles mount below resolves a path to a file on disk, and there is no
+# file called "ablation" -- only ablation.html -- so an extensionless /ablation
+# would 404. The nav bar links here, so it has to resolve.
+@app.get("/ablation")
+async def ablation():
+    return FileResponse("static/ablation.html")
+
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

@@ -1,0 +1,54 @@
+/* ═══════════════════════════════════════════════════════════
+   RESET & TOKENS
+
+   Moved verbatim out of index.html so the ablation page can share one
+   palette. ONLY the reset, the tokens, the page background and the page
+   frame live here — every dashboard component (.kpi, .hero-*, the camera
+   panes, the sensor tiles) stayed inline, because the ablation page uses
+   none of them and moving 800 lines of CSS out of a 2,000-line file with
+   no linter and no test suite buys nothing.
+
+   Linked BEFORE each page's own <style> block, so an inline rule still
+   wins a specificity tie exactly as it did when all of this was inline.
+═══════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:          #F6F7F9;   /* scaffold background */
+  --card:        #FFFFFF;   /* card surface */
+  --line:        #E7EAEF;   /* hairline border */
+  --outline:     #C2CAD4;   /* stronger stroke */
+  --ink:         #12151C;   /* primary text */
+  --ink2:        #5A6472;   /* secondary text */
+  --ink3:        #8A94A3;   /* tertiary / labels */
+  --ink-strong:  #12151C;   /* primary button fill */
+  --brand:       #FF5A3C;   /* brand orange-red */
+  --brand-light: #FF7A50;   /* gradient start */
+  --safe:        #16A34A;  --safe-bg:   #E7F6EC;  --safe-ink:   #0F7A38;  --safe-line: #C6EAD3;
+  --warn:        #F59E0B;  --warn-bg:   #FEF4E2;  --warn-ink:   #B4740A;
+  --danger:      #E5342A;  --danger-bg: #FDEBEA;  --danger-ink: #C0261D;  --danger-deep: #B21F16;
+  /* Human detection. Cyan against the fire palette's red is the one pairing
+     that stays distinguishable under every common form of colour blindness —
+     red/green would not — and it reads as information rather than alarm. */
+  --human:       #0891B2;  --human-bg:  #E0F5FA;  --human-ink:  #0E7490;  --human-line: #B8E6F0;
+  --neutral-bg:  #EEF1F5;
+  /* soft two-layer card shadow */
+  --shadow-card: 0 1px 2px rgba(16,22,35,.04), 0 8px 24px rgba(16,22,35,.06);
+  --display: 'Plus Jakarta Sans', sans-serif;  /* headings / labels / numerals */
+  --body:    'Inter', sans-serif;               /* body copy */
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.wrapper {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 22px 24px 56px;
+}

@@ -67,14 +67,37 @@ def json_safe(value):
 
 # ── ground truth ─────────────────────────────────────────────────────────────
 
-def build_truth(frame: pd.DataFrame, windows: pd.DataFrame) -> pd.DataFrame:
+def build_truth(frame: pd.DataFrame, windows: pd.DataFrame,
+                mode: str = "strict") -> pd.DataFrame:
     """Per-window and per-event binary truth, anchored on ignition.
 
     `frame` is the raw input (sorted the way build_features sorts it) and must
     carry `fire_type`. Ignition comes from `cfast_hrr_kw` for replayed CFAST
     experiments, or `ignition_offset_s` for real recordings. Both are
     evaluation-only: they are read here and never reach a model.
+
+    TWO DEFENSIBLE DEFINITIONS, AND THE CHOICE MOVES THE NUMBERS. In the
+    training data every row of a fire experiment carries that experiment's fuel
+    label -- including the 1,892 test rows where `cfast_hrr_kw` is 0 and
+    nothing is burning yet. So the model was TRAINED to answer "fire" from
+    window 0, before ignition.
+
+      "strict"     -- pre-ignition windows of a fire run are negatives. What a
+                      deployed detector should be judged on: alarming before
+                      there is a fire is a false alarm, whatever the row was
+                      labelled during training.
+      "as_trained" -- the whole fire run is positive, matching the training
+                      labels and trained_model_v3/metrics/metrics.csv. Use it
+                      to check our numbers against the published ones.
+
+    Strict is the default because it is the harder and more useful question,
+    but both are offered and the export records which produced a given table.
+    Reporting only "as_trained" would let a detector that alarms at t=0 and
+    never stops score perfectly with zero latency -- which is exactly why
+    metrics.csv shows median_detection_s = 0.0.
     """
+    if mode not in ("strict", "as_trained"):
+        raise ValueError(f"unknown ground-truth mode: {mode}")
     truth = frame.sort_values([GROUP, "timestamp"]).reset_index(drop=True)
     out = pd.DataFrame({
         GROUP: truth[GROUP],
@@ -104,7 +127,45 @@ def build_truth(frame: pd.DataFrame, windows: pd.DataFrame) -> pd.DataFrame:
 
     out["ignition_window"] = np.where(
         first >= 0, out["window_idx"].to_numpy() - (idx - first).to_numpy(), -1)
-    out["y_window"] = out["is_fire_event"] & ignited
+    out["y_window"] = out["is_fire_event"] & (ignited if mode == "strict" else True)
+    out["ignited"] = ignited
+    out.attrs["ground_truth_mode"] = mode
+    return out
+
+
+def warmup_profile(scored: dict, truth: pd.DataFrame,
+                   bands=((0, 5), (5, 15), (15, 30), (30, 60), (60, 120), (120, None))
+                   ) -> dict:
+    """False-alarm rate against position in the session, per combination.
+
+    Worth its own panel because the answer is not flat. The model's longest
+    features are a 15-window rolling statistic and a 25-window persistence
+    mean, and until those fill it is reading a history that does not exist
+    yet. Measured on the test split, combination 6's false-alarm rate in a
+    quiet room is 0.72 between windows 5 and 30 and then exactly 0.00 after
+    window 60 -- so every false alarm it produces is a warm-up artifact, not a
+    standing tendency to cry fire. A single averaged rate hides that
+    completely, and the fix (wait a minute before trusting it) only becomes
+    obvious once the profile is visible.
+    """
+    quiet = (~truth["is_fire_event"]).to_numpy()
+    widx = truth["window_idx"].to_numpy()
+    out = {"bands": [], "combos": {}}
+
+    for lo, hi in bands:
+        out["bands"].append({"from": lo, "to": hi,
+                             "label": f"{lo}–{hi}s" if hi else f"{lo}s+"})
+
+    for c in sorted(scored["alarm"]):
+        alarm = np.asarray(scored["alarm"][c], dtype=bool)
+        rates = []
+        for lo, hi in bands:
+            mask = quiet & (widx >= lo) & ((widx < hi) if hi else True)
+            rates.append({
+                "rate": float(alarm[mask].mean()) if mask.any() else None,
+                "n": int(mask.sum()),
+            })
+        out["combos"][c] = rates
     return out
 
 
@@ -268,6 +329,14 @@ def evaluate(scored: dict, truth: pd.DataFrame, clf, manifest: dict,
     event_ids = event_truth.index.to_numpy()
     y_event = event_truth.to_numpy()
 
+    # Two kinds of negative, and conflating them hides the finding. A false
+    # alarm in a genuinely quiet room is a different failure from alarming a
+    # few seconds before the official ignition timestamp of a run that really
+    # did catch fire -- especially since the model was trained to call those
+    # pre-ignition windows "fire".
+    quiet = (~truth["is_fire_event"]).to_numpy()
+    pre_ignition = (truth["is_fire_event"] & ~truth["y_window"]).to_numpy()
+
     per_combo, event_correct = {}, {}
     for c in combos:
         alarm = scored["alarm"][c]
@@ -286,6 +355,14 @@ def evaluate(scored: dict, truth: pd.DataFrame, clf, manifest: dict,
                 "min": float(np.nanmin(scored["score"][c])),
                 "median": float(np.nanmedian(scored["score"][c])),
                 "max": float(np.nanmax(scored["score"][c])),
+            },
+            "false_alarm_split": {
+                "quiet_room": float(np.asarray(alarm, dtype=bool)[quiet].mean())
+                if quiet.any() else None,
+                "quiet_room_n": int(quiet.sum()),
+                "pre_ignition": float(np.asarray(alarm, dtype=bool)[pre_ignition].mean())
+                if pre_ignition.any() else None,
+                "pre_ignition_n": int(pre_ignition.sum()),
             },
         }
         event_correct[c] = ev_pred == y_event
@@ -317,6 +394,10 @@ def evaluate(scored: dict, truth: pd.DataFrame, clf, manifest: dict,
         "n_events": int(len(y_event)),
         "n_fire_events": int(y_event.sum()),
         "ignition_known": truth.attrs.get("ignition_known", True),
+        "ground_truth_mode": truth.attrs.get("ground_truth_mode", "strict"),
+        "n_quiet_windows": int(quiet.sum()),
+        "n_pre_ignition_windows": int(pre_ignition.sum()),
+        "warmup": warmup_profile(scored, truth),
         "synthetic": synthetic,
     }
 

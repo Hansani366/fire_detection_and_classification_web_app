@@ -1,0 +1,64 @@
+/* ═══════════════════════════════════════════════════════════
+   PAGE NAV
+
+   Two pages: the live dashboard at / and ablation testing at /ablation.
+   Shared by both, so it lives here rather than inline in either.
+
+   Links are <a>, not <button>: they are navigation, and index.html's
+   global `button { ... }` rule forces a 46px pill that .src-btn already
+   has to undo. Anchors get no base styling at all, which is the clean
+   slate wanted here.
+═══════════════════════════════════════════════════════════ */
+
+.page-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--neutral-bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.page-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 9px;
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  color: var(--ink2);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+
+.page-nav a svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: currentColor;
+}
+
+.page-nav a:hover { color: var(--ink); background: rgba(255,255,255,.65); }
+
+/* aria-current="page" rather than a .active class: the browser already
+   knows which page it is on, and this keeps the state in one place for
+   screen readers and CSS alike. */
+.page-nav a[aria-current="page"] {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(16,22,35,.06), 0 2px 8px rgba(16,22,35,.05);
+}
+
+/* The nav sits between the brand block and .topbar-right, which is pushed
+   over by margin-left:auto. Below 720px the labels would collide with the
+   live pill, so the nav drops onto its own row. */
+@media (max-width: 720px) {
+  .topbar { flex-wrap: wrap; }
+  .page-nav { order: 3; width: 100%; margin-top: 4px; }
+  .page-nav a { flex: 1; justify-content: center; }
+}

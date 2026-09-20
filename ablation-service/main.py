@@ -301,6 +301,10 @@ class RunIn(BaseModel):
     dataset_id: str = "test_split"
     combos: list[int] = Field(default_factory=lambda: sorted(K.COMBOS))
     experiment_ids: list[str] | None = None
+    # "strict" treats pre-ignition windows of a fire run as negatives;
+    # "as_trained" matches the dataset's own labels and metrics.csv. See
+    # metrics.build_truth for why both exist.
+    ground_truth: str = "strict"
 
 
 @app.post("/api/ablation/runs", status_code=202)
@@ -308,9 +312,12 @@ async def create_run(body: RunIn):
     unknown = [c for c in body.combos if c not in K.COMBOS]
     if unknown:
         raise HTTPException(400, f"unknown combinations: {unknown}")
+    if body.ground_truth not in ("strict", "as_trained"):
+        raise HTTPException(400, "ground_truth must be 'strict' or 'as_trained'")
     try:
         run_id = await R.submit(body.dataset_id, sorted(set(body.combos)),
-                                STATE["clf"], STATE["manifest"], body.experiment_ids)
+                                STATE["clf"], STATE["manifest"], body.experiment_ids,
+                                body.ground_truth)
     except KeyError:
         raise HTTPException(404, f"unknown dataset: {body.dataset_id}")
     return {"run_id": run_id, "status": "queued"}

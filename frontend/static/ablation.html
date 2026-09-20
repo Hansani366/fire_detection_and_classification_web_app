@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FireWatch — Ablation Tests</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/css/tokens.css" />
+<link rel="stylesheet" href="/css/nav.css" />
+<style>
+/* ═══════════════════════════════════════════════════════════
+   TOP BAR  (kept in step with index.html's, minus the live pill)
+═══════════════════════════════════════════════════════════ */
+.topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+.brand-mark {
+  width: 42px; height: 42px; border-radius: 12px; flex: none;
+  background: linear-gradient(135deg, var(--brand-light), var(--brand));
+  display: grid; place-items: center;
+  box-shadow: 0 4px 14px rgba(255,90,60,.3);
+}
+.brand-mark svg { width: 23px; height: 23px; }
+.fw-logo { font-family: var(--display); font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
+.fw-subtitle { font-size: 12.5px; color: var(--ink3); margin-top: 1px; }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.ver-tag {
+  font-family: var(--display); font-size: 11px; font-weight: 700; color: var(--ink3);
+  background: var(--neutral-bg); border: 1px solid var(--line);
+  padding: 5px 9px; border-radius: 7px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CARDS
+═══════════════════════════════════════════════════════════ */
+.fw-card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 16px; box-shadow: var(--shadow-card);
+  padding: 20px 22px; margin-bottom: 18px;
+}
+.card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.card-title {
+  font-family: var(--display); font-size: 15px; font-weight: 700;
+  display: flex; align-items: center; gap: 9px;
+}
+.card-title::before {
+  content: ''; width: 3px; height: 15px; border-radius: 2px; background: var(--brand);
+}
+.card-sub { font-size: 12.5px; color: var(--ink3); line-height: 1.55; }
+.card-head-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+/* ═══════════════════════════════════════════════════════════
+   SYNTHETIC-DATA BANNER
+   Deliberately loud. An accuracy figure from a simulator must never be
+   quotable without the word "synthetic" attached to it.
+═══════════════════════════════════════════════════════════ */
+.synth-banner {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: var(--danger-bg); border: 1px solid var(--danger);
+  border-radius: 14px; padding: 14px 16px; margin-bottom: 18px;
+}
+.synth-banner svg { width: 19px; height: 19px; fill: var(--danger-ink); flex: none; margin-top: 1px; }
+.synth-banner b { font-family: var(--display); color: var(--danger-ink); font-size: 13.5px; }
+.synth-banner p { font-size: 12.5px; color: var(--danger-ink); line-height: 1.6; margin-top: 3px; }
+
+/* ═══════════════════════════════════════════════════════════
+   TABS
+═══════════════════════════════════════════════════════════ */
+.tabs { display: flex; gap: 4px; padding: 4px; background: var(--neutral-bg);
+        border: 1px solid var(--line); border-radius: 12px; margin-bottom: 18px; }
+.tab {
+  flex: 1; padding: 10px 16px; border-radius: 9px; border: none; background: none;
+  font-family: var(--display); font-size: 13.5px; font-weight: 700; color: var(--ink2);
+  cursor: pointer; transition: background .15s, color .15s;
+}
+.tab:hover { color: var(--ink); }
+.tab.active { background: var(--card); color: var(--ink);
+              box-shadow: 0 1px 2px rgba(16,22,35,.06), 0 2px 8px rgba(16,22,35,.05); }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ═══════════════════════════════════════════════════════════
+   CONTROLS
+═══════════════════════════════════════════════════════════ */
+.ctl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+.ctl-label {
+  font-family: var(--display); font-size: 11px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ink3); margin-bottom: 8px;
+}
+select, input[type="text"] {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--outline);
+  border-radius: 10px; font-family: var(--body); font-size: 13.5px;
+  color: var(--ink); background: var(--card);
+}
+.combo-list { display: flex; flex-direction: column; gap: 6px; }
+.combo-chk {
+  display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 9px; cursor: pointer; font-size: 13px;
+}
+.combo-chk:hover { background: var(--neutral-bg); }
+.combo-chk input { accent-color: var(--brand); width: 15px; height: 15px; }
+.combo-num {
+  width: 20px; height: 20px; border-radius: 6px; background: var(--neutral-bg);
+  display: grid; place-items: center; font-family: var(--display);
+  font-size: 11px; font-weight: 700; color: var(--ink2); flex: none;
+}
+.mod-dots { margin-left: auto; display: flex; gap: 3px; }
+.mod-dot {
+  width: 17px; height: 17px; border-radius: 5px; display: grid; place-items: center;
+  font-family: var(--display); font-size: 9.5px; font-weight: 700;
+  background: var(--neutral-bg); color: var(--ink3);
+}
+.mod-dot.on { background: var(--brand); color: #fff; }
+
+button.primary, button.ghost {
+  padding: 11px 20px; border-radius: 10px; font-family: var(--display);
+  font-size: 13.5px; font-weight: 700; cursor: pointer; border: 1px solid transparent;
+}
+button.primary { background: var(--ink-strong); color: #fff; }
+button.primary:hover { opacity: .9; }
+button.primary:disabled { opacity: .45; cursor: not-allowed; }
+button.ghost { background: var(--card); color: var(--ink); border-color: var(--outline); }
+button.ghost:hover { background: var(--neutral-bg); }
+button.ghost:disabled { opacity: .45; cursor: not-allowed; }
+
+.run-row { display: flex; gap: 10px; align-items: center; margin-top: 18px; flex-wrap: wrap; }
+.run-status { font-size: 12.5px; color: var(--ink3); }
+.run-status.err { color: var(--danger-ink); }
+
+/* ═══════════════════════════════════════════════════════════
+   RESULTS TABLE
+═══════════════════════════════════════════════════════════ */
+.table-scroll { overflow-x: auto; margin: 0 -22px; padding: 0 22px; }
+table.res { border-collapse: collapse; width: 100%; font-size: 12.5px; white-space: nowrap; }
+table.res th, table.res td { padding: 9px 10px; text-align: right; border-bottom: 1px solid var(--line); }
+table.res th {
+  font-family: var(--display); font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--ink3); text-align: right;
+  border-bottom: 1px solid var(--outline); position: sticky; top: 0; background: var(--card);
+}
+table.res th.l, table.res td.l { text-align: left; }
+table.res tbody tr:hover { background: var(--neutral-bg); }
+table.res tr.is-full { background: rgba(255,90,60,.05); }
+table.res tr.is-full td { font-weight: 600; }
+.num { font-family: var(--display); font-variant-numeric: tabular-nums; }
+.ci { display: block; font-size: 10px; color: var(--ink3); font-weight: 400; margin-top: 1px; }
+.grp-div { border-left: 1px solid var(--line); }
+.sig { font-size: 10.5px; padding: 2px 6px; border-radius: 5px; font-family: var(--display); font-weight: 700; }
+.sig.ns { background: var(--neutral-bg); color: var(--ink3); }
+.sig.yes { background: var(--danger-bg); color: var(--danger-ink); }
+.dash { color: var(--ink3); }
+
+/* ═══════════════════════════════════════════════════════════
+   CONFUSION MATRICES
+═══════════════════════════════════════════════════════════ */
+.cm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.cm { border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px; }
+.cm-title { font-family: var(--display); font-size: 12.5px; font-weight: 700; margin-bottom: 9px; }
+table.cm-t { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+table.cm-t th, table.cm-t td { padding: 6px 7px; text-align: center; }
+table.cm-t th { font-size: 10px; color: var(--ink3); font-family: var(--display); font-weight: 700; }
+table.cm-t th.rh { text-align: left; }
+table.cm-t td { font-family: var(--display); font-variant-numeric: tabular-nums;
+                border: 1px solid var(--line); border-radius: 6px; }
+td.hit { background: var(--safe-bg); color: var(--safe-ink); font-weight: 700; }
+td.miss { background: var(--danger-bg); color: var(--danger-ink); }
+td.zero { color: var(--ink3); }
+
+/* ═══════════════════════════════════════════════════════════
+   RULES + LIMITATIONS
+═══════════════════════════════════════════════════════════ */
+.rule { border: 1px solid var(--line); border-radius: 12px; padding: 14px 15px; margin-bottom: 10px; }
+.rule-head { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+.rule-name { font-family: var(--display); font-size: 13.5px; font-weight: 700; }
+.rule-by { font-size: 11.5px; color: var(--ink3); margin-left: auto; text-align: right; }
+.rule-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+  background: var(--neutral-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 9px 11px; color: var(--ink); line-height: 1.55; white-space: pre-wrap;
+  word-break: break-word;
+}
+.rule-why { font-size: 12px; color: var(--ink2); line-height: 1.6; margin-top: 8px; }
+.rule-score { font-size: 11.5px; color: var(--ink3); margin-top: 6px; }
+
+.lim { display: flex; gap: 11px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.lim:last-child { border-bottom: none; }
+.lim-sev {
+  font-family: var(--display); font-size: 9.5px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; padding: 3px 7px; border-radius: 5px; height: fit-content; flex: none;
+}
+.lim-sev.high { background: var(--danger-bg); color: var(--danger-ink); }
+.lim-sev.medium { background: var(--warn-bg); color: var(--warn-ink); }
+.lim-sev.low { background: var(--neutral-bg); color: var(--ink2); }
+.lim-title { font-family: var(--display); font-size: 13px; font-weight: 700; margin-bottom: 3px; }
+.lim-detail { font-size: 12.5px; color: var(--ink2); line-height: 1.6; }
+
+.empty { text-align: center; padding: 44px 20px; color: var(--ink3); font-size: 13px; }
+.note { font-size: 12.5px; color: var(--ink2); line-height: 1.6;
+        background: var(--neutral-bg); border-radius: 10px; padding: 11px 13px; margin-top: 12px; }
+.soon { display: inline-block; font-family: var(--display); font-size: 10px; font-weight: 700;
+        letter-spacing: .05em; text-transform: uppercase; background: var(--warn-bg);
+        color: var(--warn-ink); padding: 3px 7px; border-radius: 5px; margin-left: 8px; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- ── Top bar ── -->
+  <div class="topbar">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M12 2C13 5 11 6 11 8C11 9 12 10 12 10C12 10 14 9 14 7C16 9 17 11 17 14A5 5 0 1 1 7 14C7 12 8 11 9 10C8.5 12 10 13 10 13C10 13 9 9 12 5Z"/></svg>
+    </div>
+    <div>
+      <div class="fw-logo">FireWatch</div>
+      <div class="fw-subtitle">Ablation Testing — what each modality contributes</div>
+    </div>
+    <nav class="page-nav" aria-label="Pages">
+      <a href="/">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C13 5 11 6 11 8C11 9 12 10 12 10C12 10 14 9 14 7C16 9 17 11 17 14A5 5 0 1 1 7 14C7 12 8 11 9 10C8.5 12 10 13 10 13C10 13 9 9 12 5Z"/></svg>
+        Live Monitoring
+      </a>
+      <a href="/ablation" aria-current="page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h3V10H4v10Zm6.5 0h3V4h-3v16Zm6.5 0h3v-7h-3v7Z"/></svg>
+        Ablation Tests
+      </a>
+    </nav>
+    <div class="topbar-right">
+      <div class="ver-tag" id="model-tag">loading…</div>
+    </div>
+  </div>
+
+  <!-- ── Synthetic-data banner ── -->
+  <div class="synth-banner" id="synth-banner">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 1 21h22L12 2Zm0 6 6.9 11.9H5.1L12 8Zm-1 3v5h2v-5h-2Zm0 6v2h2v-2h-2Z"/></svg>
+    <div>
+      <b>SYNTHETIC — CFAST generator, not measured fire</b>
+      <p id="synth-text">
+        Both trained models learned from simulation. Neither has seen a recorded fire, and the
+        camera branch of the generator was invented rather than measured. Numbers on this page
+        describe the generator until they come from your own recordings.
+      </p>
+    </div>
+  </div>
+
+  <!-- ── Tabs ── -->
+  <div class="tabs">
+    <button class="tab active" data-panel="batch">Batch evaluation</button>
+    <button class="tab" data-panel="live">Live comparison</button>
+  </div>
+
+  <!-- ════════════════ BATCH ════════════════ -->
+  <div class="panel active" id="panel-batch">
+
+    <div class="fw-card">
+      <div class="card-head">
+        <div class="card-title">Run an evaluation</div>
+      </div>
+      <div class="ctl-grid">
+        <div>
+          <div class="ctl-label">Dataset</div>
+          <select id="dataset"></select>
+          <div class="card-sub" id="dataset-note" style="margin-top:9px"></div>
+        </div>
+        <div>
+          <div class="ctl-label">Combinations</div>
+          <div class="combo-list" id="combo-list"></div>
+        </div>
+      </div>
+      <div style="margin-top:18px">
+        <div class="ctl-label">Ground truth</div>
+        <select id="ground-truth" style="max-width:460px">
+          <option value="strict">Strict — pre-ignition windows are negatives (recommended)</option>
+          <option value="as_trained">As trained — the whole fire run is positive</option>
+        </select>
+        <div class="card-sub" style="margin-top:9px">
+          In this dataset every row of a fire run carries that run's fuel label, including the
+          1,892 test rows where nothing is burning yet — so the model was <b>trained</b> to answer
+          "fire" from the first second. <b>Strict</b> judges it the way a deployed detector should
+          be judged: alarming before there is a fire is a false alarm. <b>As trained</b> matches
+          the dataset's own labels and the published <code>metrics.csv</code>, which is why that
+          file reports a median detection time of 0.0&nbsp;s.
+        </div>
+      </div>
+      <div class="run-row">
+        <button class="primary" id="btn-run">Run all combinations</button>
+        <button class="ghost" id="btn-csv" disabled>Export CSV</button>
+        <button class="ghost" id="btn-json" disabled>Export JSON</button>
+        <span class="run-status" id="run-status"></span>
+      </div>
+    </div>
+
+    <div id="results"></div>
+  </div>
+
+  <!-- ════════════════ LIVE ════════════════ -->
+  <div class="panel" id="panel-live">
+    <div class="fw-card">
+      <div class="card-head">
+        <div class="card-title">Live comparison <span class="soon">not yet wired</span></div>
+      </div>
+      <div class="card-sub">
+        This tab will score all six combinations side by side on the live camera and sensor
+        nodes, at the models' 1&nbsp;Hz rate. It shows agreement and disagreement between the
+        combinations — <b>never accuracy</b>, because nothing on a live feed carries a
+        ground-truth label.
+      </div>
+      <div class="empty">The live scoring path is still being built.</div>
+    </div>
+  </div>
+
+  <!-- ── Rules ── -->
+  <div class="fw-card">
+    <div class="card-head">
+      <div class="card-title">How each combination decides</div>
+      <div class="card-head-right card-sub">rendered from <code>/api/ablation/config</code></div>
+    </div>
+    <div class="card-sub" style="margin-bottom:14px">
+      These rules are rendered from the same frozen constants the service executes, so what is
+      printed here and what actually ran cannot disagree. Every threshold comes from the model's
+      manifest or from the dataset generator — none was hand-picked.
+    </div>
+    <div id="rules"></div>
+  </div>
+
+  <!-- ── Limitations ── -->
+  <div class="fw-card">
+    <div class="card-head">
+      <div class="card-title">Known limitations</div>
+    </div>
+    <div id="limitations"></div>
+  </div>
+
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   ABLATION PAGE
+
+   Classic script, not a module — same convention as the dashboard, whose
+   camera-sources.js and sensor-panel.js attach to window.
+
+   Everything the page displays about HOW a combination decides comes from
+   /api/ablation/config. The page holds no copy of a threshold: if it did,
+   the printed rule could drift away from the executed one, and the paper
+   would describe a system that was never run.
+═══════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const API = '/api/ablation';
+
+  const S = { config: null, datasets: [], runId: null, polling: null };
+
+  // ── helpers ──────────────────────────────────────────────
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // null means "undefined", not zero — a precision of null says the arm never
+  // fired, which is a different statement from "it fired and was wrong".
+  const num = (v, d = 3) => (v === null || v === undefined) ? '<span class="dash">—</span>'
+                                                            : Number(v).toFixed(d);
+  const ci = (pair) => (!pair || pair[0] === null) ? ''
+    : `<span class="ci">${Number(pair[0]).toFixed(2)}–${Number(pair[1]).toFixed(2)}</span>`;
+
+  async function get(path) {
+    const r = await fetch(API + path, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`${path} → HTTP ${r.status}`);
+    return r.json();
+  }
+
+  // ── tabs ─────────────────────────────────────────────────
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
+      tab.classList.add('active');
+      $('panel-' + tab.dataset.panel).classList.add('active');
+    });
+  });
+
+  // ── controls ─────────────────────────────────────────────
+  function renderCombos() {
+    const { combos, modalities } = S.config;
+    $('combo-list').innerHTML = Object.keys(combos).map((c) => `
+      <label class="combo-chk">
+        <input type="checkbox" value="${c}" checked />
+        <span class="combo-num">${c}</span>
+        <span>${esc(combos[c])}</span>
+        <span class="mod-dots">
+          <span class="mod-dot ${modalities[c].sensors ? 'on' : ''}" title="sensors">S</span>
+          <span class="mod-dot ${modalities[c].yolo ? 'on' : ''}" title="YOLO">Y</span>
+          <span class="mod-dot ${modalities[c].vlm ? 'on' : ''}" title="VLM">V</span>
+        </span>
+      </label>`).join('');
+  }
+
+  function renderDatasets() {
+    $('dataset').innerHTML = S.datasets.map((d) =>
+      `<option value="${esc(d.id)}">${esc(d.label)} — ${d.experiments} experiments</option>`).join('');
+    showDatasetNote();
+  }
+
+  function showDatasetNote() {
+    const d = S.datasets.find((x) => x.id === $('dataset').value);
+    $('dataset-note').innerHTML = d ? esc(d.note) : '';
+  }
+  $('dataset').addEventListener('change', showDatasetNote);
+
+  function selectedCombos() {
+    return Array.from(document.querySelectorAll('.combo-chk input:checked'))
+                .map((i) => Number(i.value));
+  }
+
+  // ── running ──────────────────────────────────────────────
+  async function run() {
+    const combos = selectedCombos();
+    if (!combos.length) { setStatus('Pick at least one combination.', true); return; }
+
+    $('btn-run').disabled = true;
+    $('btn-csv').disabled = $('btn-json').disabled = true;
+    setStatus('Submitting…');
+    $('results').innerHTML = '';
+
+    try {
+      const r = await fetch(API + '/runs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          dataset_id: $('dataset').value,
+          combos,
+          ground_truth: $('ground-truth').value,
+        }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      S.runId = (await r.json()).run_id;
+      poll();
+    } catch (e) {
+      setStatus('Could not start: ' + e.message, true);
+      $('btn-run').disabled = false;
+    }
+  }
+
+  function poll() {
+    clearInterval(S.polling);
+    S.polling = setInterval(async () => {
+      try {
+        const st = await get(`/runs/${S.runId}`);
+        if (st.status === 'running' || st.status === 'queued') {
+          setStatus(`${st.status}…`);
+          return;
+        }
+        clearInterval(S.polling);
+        $('btn-run').disabled = false;
+        if (st.status === 'error') { setStatus('Failed: ' + st.error, true); return; }
+        const res = await get(`/runs/${S.runId}/results`);
+        setStatus(`Done in ${Object.values(res.timings).reduce((a, b) => a + b, 0)} ms`);
+        $('btn-csv').disabled = $('btn-json').disabled = false;
+        renderResults(res);
+      } catch (e) {
+        clearInterval(S.polling);
+        $('btn-run').disabled = false;
+        setStatus('Failed: ' + e.message, true);
+      }
+    }, 600);
+  }
+
+  function setStatus(text, isErr) {
+    const el = $('run-status');
+    el.textContent = text;
+    el.className = 'run-status' + (isErr ? ' err' : '');
+  }
+
+  // ── results ──────────────────────────────────────────────
+  function renderResults(res) {
+    const combos = Object.keys(res.combos).sort((a, b) => a - b);
+    const degenerate = (S.datasets.find((d) => d.id === res.dataset.id) || {}).degenerate_binary;
+
+    let html = `
+      <div class="fw-card">
+        <div class="card-head">
+          <div class="card-title">Detection — fire vs no fire</div>
+          <div class="card-head-right card-sub">
+            ${res.n_windows.toLocaleString()} windows · ${res.n_events} events
+            (${res.n_fire_events} fire) ·
+            <span class="sig ${res.ground_truth_mode === 'strict' ? 'ns' : 'yes'}">
+              ground truth: ${esc(res.ground_truth_mode)}</span>
+          </div>
+        </div>`;
+
+    if (degenerate) {
+      html += `<div class="note"><b>Read recall only.</b> Every experiment in this set is a fire,
+        so there are no negatives: precision, accuracy and false-alarm rate are degenerate and
+        mean nothing here. What it shows honestly is whether an unfamiliar fire is still caught.</div>`;
+    }
+
+    html += `
+        <div class="table-scroll"><table class="res">
+          <thead><tr>
+            <th class="l">#</th><th class="l">Combination</th>
+            <th class="grp-div">Acc</th><th>Prec</th><th>Rec</th><th>F1</th><th>False alarms/h</th>
+            <th class="grp-div">Acc</th><th>Prec</th><th>Rec</th><th>F1</th>
+            <th class="grp-div">Median</th><th>p90</th><th>Missed</th>
+            <th class="grp-div">vs #6</th>
+          </tr>
+          <tr>
+            <th class="l"></th><th class="l"></th>
+            <th class="grp-div" colspan="5" style="text-align:center">per window (1 Hz)</th>
+            <th class="grp-div" colspan="4" style="text-align:center">per event</th>
+            <th class="grp-div" colspan="3" style="text-align:center">detection latency</th>
+            <th class="grp-div"></th>
+          </tr></thead><tbody>`;
+
+    for (const c of combos) {
+      const r = res.combos[c], w = r.window, e = r.event, lat = r.latency, vs = r.vs_combo6;
+      const m = r.modalities;
+      html += `<tr class="${c === '6' ? 'is-full' : ''}">
+        <td class="l"><span class="combo-num">${c}</span></td>
+        <td class="l">${esc(r.name)}
+          <span class="mod-dots" style="display:inline-flex;margin-left:6px;vertical-align:middle">
+            <span class="mod-dot ${m.sensors ? 'on' : ''}">S</span>
+            <span class="mod-dot ${m.yolo ? 'on' : ''}">Y</span>
+            <span class="mod-dot ${m.vlm ? 'on' : ''}">V</span>
+          </span></td>
+        <td class="num grp-div">${num(w.accuracy)}${ci(w.accuracy_ci)}</td>
+        <td class="num">${num(w.precision)}</td>
+        <td class="num">${num(w.recall)}</td>
+        <td class="num">${num(w.f1)}</td>
+        <td class="num">${w.false_alarms_per_hour === null ? '<span class="dash">—</span>'
+                          : Math.round(w.false_alarms_per_hour).toLocaleString()}</td>
+        <td class="num grp-div">${num(e.accuracy)}${ci(e.accuracy_ci)}</td>
+        <td class="num">${num(e.precision)}</td>
+        <td class="num">${num(e.recall)}</td>
+        <td class="num">${num(e.f1)}</td>
+        <td class="num grp-div">${lat.median_detection_s === null ? '<span class="dash">—</span>'
+                                  : lat.median_detection_s.toFixed(1) + ' s'}</td>
+        <td class="num">${lat.p90_detection_s === null ? '<span class="dash">—</span>'
+                          : lat.p90_detection_s.toFixed(1) + ' s'}</td>
+        <td class="num">${lat.events_never_detected}</td>
+        <td class="grp-div">${vsCell(vs)}</td>
+      </tr>`;
+    }
+    html += `</tbody></table></div>`;
+
+    html += `<div class="note">
+      <b>Why the false-alarm column is per hour.</b> A per-window rate of 0.17 sounds small; at
+      1&nbsp;Hz it is about 600 nuisance alarms an hour. Both forms are in the CSV export.<br>
+      <b>Why pre-ignition windows count as negatives.</b> A fire experiment is not burning at
+      t=0. If every window of it counted as positive, a detector that alarmed immediately and
+      never stopped would score perfectly with zero latency.
+    </div></div>`;
+
+    html += warmupCard(res, combos);
+    html += confusionCard(res, combos);
+    if (res.fuel) html += fuelCard(res);
+    else if (res.fuel_note) html += `<div class="fw-card"><div class="card-head">
+      <div class="card-title">Fuel classification</div></div>
+      <div class="card-sub">${esc(res.fuel_note)}</div></div>`;
+
+    $('results').innerHTML = html;
+  }
+
+  function vsCell(vs) {
+    if (!vs) return '<span class="dash">—</span>';
+    const sig = vs.p_value < 0.05;
+    const sign = vs.event_delta > 0 ? '+' : '';
+    return `<span class="num">${sign}${vs.event_delta}/${vs.event_delta_of}</span>
+            <span class="sig ${sig ? 'yes' : 'ns'}">p=${vs.p_value.toFixed(3)}${sig ? '' : ' n.s.'}</span>`;
+  }
+
+  // Heat cell for the warm-up table: the point is to make "high early, zero
+  // later" obvious at a glance rather than something you work out from digits.
+  function heat(rate) {
+    if (rate === null || rate === undefined) return '<td class="zero">—</td>';
+    if (rate === 0) return '<td class="hit">0.00</td>';
+    const a = Math.min(1, rate * 1.4);
+    return `<td style="background:rgba(229,52,42,${a.toFixed(2)});` +
+           `color:${a > .5 ? '#fff' : 'var(--danger-ink)'};font-weight:700">${rate.toFixed(2)}</td>`;
+  }
+
+  function warmupCard(res, combos) {
+    const w = res.warmup;
+    if (!w) return '';
+    const head = '<tr><th class="rh">combination</th>' +
+      w.bands.map((b) => `<th>${esc(b.label)}</th>`).join('') + '</tr>';
+    const rows = combos.map((c) => '<tr><th class="rh"><span class="combo-num">' + c +
+      '</span> ' + esc(res.combos[c].name) + '</th>' +
+      w.combos[c].map((cell) => heat(cell.rate)).join('') + '</tr>').join('');
+
+    const splits = combos.map((c) => {
+      const s = res.combos[c].false_alarm_split;
+      return `<tr><td class="l"><span class="combo-num">${c}</span> ${esc(res.combos[c].name)}</td>
+        <td class="num">${num(s.quiet_room)}</td>
+        <td class="num">${num(s.pre_ignition)}</td></tr>`;
+    }).join('');
+
+    return `<div class="fw-card">
+      <div class="card-head">
+        <div class="card-title">Where the false alarms actually come from</div>
+      </div>
+      <div class="card-sub" style="margin-bottom:14px">
+        A single averaged false-alarm rate hides the shape of the problem. Split two ways, it
+        becomes obvious — and so does the fix.
+      </div>
+      <div class="cm-grid">
+        <div class="cm">
+          <div class="cm-title">False alarms in a quiet room, by position in the session</div>
+          <table class="cm-t">${head}${rows}</table>
+          <div class="note" style="margin-top:11px">
+            The model's longest features are a 15-window rolling statistic and a 25-window
+            persistence mean. Until those fill, it is reading a history that does not exist yet.
+            That is a <b>warm-up artifact</b>, not a standing tendency to cry fire — which means
+            the practical fix is to ignore the first minute of any session, not to retrain.
+          </div>
+        </div>
+        <div class="cm">
+          <div class="cm-title">Quiet room vs before ignition</div>
+          <table class="res" style="white-space:normal">
+            <thead><tr><th class="l">combination</th><th>quiet room</th><th>pre-ignition</th></tr></thead>
+            <tbody>${splits}</tbody>
+          </table>
+          <div class="note" style="margin-top:11px">
+            ${res.n_quiet_windows.toLocaleString()} quiet-room windows and
+            ${res.n_pre_ignition_windows.toLocaleString()} pre-ignition windows.
+            These are different failures. Alarming in an empty room is a nuisance alarm.
+            Alarming shortly before the official ignition timestamp of a run that really did
+            catch fire is largely the model doing what it was trained to do — those rows carry a
+            fire label in the training data.
+          </div>
+        </div>
+      </div></div>`;
+  }
+
+  function confusionCard(res, combos) {
+    let cells = '';
+    for (const c of combos) {
+      const m = res.combos[c].event.confusion;
+      cells += `<div class="cm">
+        <div class="cm-title"><span class="combo-num">${c}</span> ${esc(res.combos[c].name)}</div>
+        <table class="cm-t">
+          <tr><th class="rh"></th><th>said fire</th><th>said none</th></tr>
+          <tr><th class="rh">was fire</th>
+              <td class="hit">${m.actual_fire.predicted_fire}</td>
+              <td class="${m.actual_fire.predicted_none ? 'miss' : 'zero'}">${m.actual_fire.predicted_none}</td></tr>
+          <tr><th class="rh">was none</th>
+              <td class="${m.actual_none.predicted_fire ? 'miss' : 'zero'}">${m.actual_none.predicted_fire}</td>
+              <td class="hit">${m.actual_none.predicted_none}</td></tr>
+        </table></div>`;
+    }
+    return `<div class="fw-card">
+      <div class="card-head"><div class="card-title">Confusion matrices — per event</div></div>
+      <div class="cm-grid">${cells}</div></div>`;
+  }
+
+  function fuelCard(res) {
+    const f = res.fuel.event, classes = res.fuel.classes;
+    let head = '<tr><th class="rh">actual ↓ / predicted →</th>' +
+               classes.map((c) => `<th>${esc(c)}</th>`).join('') + '</tr>';
+    let rows = classes.map((a) => '<tr><th class="rh">' + esc(a) + '</th>' +
+      classes.map((b) => {
+        const v = f.confusion[a][b];
+        const cls = a === b ? 'hit' : (v ? 'miss' : 'zero');
+        return `<td class="${cls}">${v}</td>`;
+      }).join('') + '</tr>').join('');
+
+    const per = classes.map((c) => `<tr>
+        <td class="l">${esc(c)}</td>
+        <td class="num">${num(f.per_class[c].precision)}</td>
+        <td class="num">${num(f.per_class[c].recall)}</td>
+        <td class="num">${num(f.per_class[c].f1)}</td>
+        <td class="num">${f.per_class[c].support}</td></tr>`).join('');
+
+    return `<div class="fw-card">
+      <div class="card-head">
+        <div class="card-title">Fuel classification — combination 6 only</div>
+        <div class="card-head-right card-sub">macro-F1 ${num(f.macro_f1, 4)} ·
+          accuracy ${num(f.accuracy, 4)}</div>
+      </div>
+      <div class="card-sub" style="margin-bottom:14px">
+        Combinations 1–5 can only answer fire or no fire. Only the trained fusion model names the
+        fuel, so this is the one thing it does that nothing else on the page can.
+        <code>no_fire</code> is kept as a row so a misfire on a quiet room shows up here too.
+      </div>
+      <div class="cm-grid">
+        <div class="cm"><div class="cm-title">Confusion — per event</div>
+          <table class="cm-t">${head}${rows}</table></div>
+        <div class="cm"><div class="cm-title">Per class</div>
+          <table class="res" style="white-space:normal">
+            <thead><tr><th class="l">class</th><th>P</th><th>R</th><th>F1</th><th>n</th></tr></thead>
+            <tbody>${per}</tbody></table></div>
+      </div>
+      <div class="note">
+        Wrong fuel given detected: <b>${num(f.wrong_fuel_given_detected)}</b> ·
+        abstain rate at gate ${num(res.fuel.gate_threshold, 2)}: <b>${num(f.abstain_rate)}</b>.
+        Abstention is deliberately kept out of the detection table above — it changes the
+        denominator, which would make the six combinations incomparable.
+      </div></div>`;
+  }
+
+  // ── rules + limitations ──────────────────────────────────
+  function renderRules() {
+    const rules = S.config.rules, mods = S.config.modalities;
+    $('rules').innerHTML = Object.keys(rules).sort((a, b) => a - b).map((c) => {
+      const r = rules[c], m = mods[c];
+      return `<div class="rule">
+        <div class="rule-head">
+          <span class="combo-num">${c}</span>
+          <span class="rule-name">${esc(r.name)}</span>
+          <span class="mod-dots">
+            <span class="mod-dot ${m.sensors ? 'on' : ''}">S</span>
+            <span class="mod-dot ${m.yolo ? 'on' : ''}">Y</span>
+            <span class="mod-dot ${m.vlm ? 'on' : ''}">V</span>
+          </span>
+          <span class="rule-by">${esc(r.decided_by)}</span>
+        </div>
+        <div class="rule-code">${esc(r.rule)}</div>
+        <div class="rule-score">Score used for the ROC curve: <code>${esc(r.score)}</code></div>
+        <div class="rule-why">${esc(r.why)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderLimitations(items) {
+    $('limitations').innerHTML = items.map((l) => `
+      <div class="lim">
+        <span class="lim-sev ${esc(l.severity)}">${esc(l.severity)}</span>
+        <div>
+          <div class="lim-title">${esc(l.title)}</div>
+          <div class="lim-detail">${esc(l.detail)}</div>
+        </div>
+      </div>`).join('');
+  }
+
+  // ── exports ──────────────────────────────────────────────
+  $('btn-csv').addEventListener('click', () => {
+    if (S.runId) window.location = `${API}/runs/${S.runId}/export.csv?level=event`;
+  });
+  $('btn-json').addEventListener('click', () => {
+    if (S.runId) window.open(`${API}/runs/${S.runId}/export.json`, '_blank');
+  });
+  $('btn-run').addEventListener('click', run);
+
+  // ── boot ─────────────────────────────────────────────────
+  (async function boot() {
+    try {
+      const [health, config, datasets, lims] = await Promise.all([
+        get('/health'), get('/config'), get('/datasets'), get('/limitations'),
+      ]);
+      S.config = config;
+      S.datasets = datasets.datasets;
+
+      $('model-tag').textContent = health.selected_model;
+      $('model-tag').title = `run ${health.manifest_run_id} · ` +
+        Object.entries(health.lib_versions).map(([k, v]) => `${k} ${v.have}`).join(', ');
+      if (!health.lib_versions_ok) {
+        $('synth-text').innerHTML +=
+          '<br><b>Library versions do not match the ones that trained these models. ' +
+          'Results from this container are not trustworthy.</b>';
+      }
+      renderDatasets();
+      renderCombos();
+      renderRules();
+      renderLimitations(lims.limitations);
+    } catch (e) {
+      $('results').innerHTML =
+        `<div class="fw-card"><div class="empty">Could not reach the ablation service: ${esc(e.message)}</div></div>`;
+    }
+  })();
+})();
+</script>
+</body>
+</html>
