@@ -64,7 +64,7 @@ MQ7_WARN,  MQ7_DANGER  = _threshold("MQ7", 35, 100)
 TEMP_WARN, TEMP_DANGER = _threshold("TEMP", 45, 60)
 
 logging.basicConfig(level=logging.INFO)
-log = logging.getLogger("sensor-service")
+log = logging.getLogger("esp32-sensor-service")
 
 # deviceId -> {"zoneId", "readings", "seq", "uptimeMs", "rssi", "mock",
 #              "received_at" (ISO), "received_mono" (float), "first_seen" (ISO),
@@ -289,7 +289,7 @@ async def health():
     now = time.monotonic()
     return {
         "status": "ok",
-        "service": "sensor-service",
+        "service": "esp32-sensor-service",
         "nodes": len(NODES),
         "fresh": sum(
             1 for n in NODES.values()

@@ -72,7 +72,7 @@ FIRE_YOLO_URL = os.getenv("FIRE_YOLO_URL",
 VLM_DETAILED_URL = os.getenv("VLM_DETAILED_URL",
                              "http://vlm-service:8019/describe-image-detailed/")
 SENSOR_LATEST_URL = os.getenv("SENSOR_LATEST_URL",
-                              "http://sensor-service:8022/api/sensors/latest")
+                              "http://esp32-sensor-service:8022/api/sensors/latest")
 
 # Populated at startup by _load(). Everything downstream reads these.
 STATE: dict = {}
@@ -281,7 +281,7 @@ LIMITATIONS = [
 
 # Routes carry the full /api/ablation/ prefix because nginx's proxy_pass has no
 # URI part and forwards the original path unchanged -- the same reason
-# sensor-service and esp32-service declare theirs that way.
+# esp32-sensor-service and esp32-cam-service declare theirs that way.
 @app.get("/api/ablation/health")
 async def health():
     return _health_payload()

@@ -58,7 +58,7 @@ baseline, and the baseline can only be measured from air that is actually clean.
 
 ## `sensors.csv`
 
-One row per sensor sample, in time order. The column names match what `sensor-service` already
+One row per sensor sample, in time order. The column names match what `esp32-sensor-service` already
 reports, so `GET /api/sensors/history?deviceId=...` output converts with almost no work.
 
 ```

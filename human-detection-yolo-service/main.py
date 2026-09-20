@@ -12,7 +12,7 @@ every box and lets the dashboard threshold them, which is fine when the output
 is a set of badges. Here the output is a *count* that feeds the incident muster
 in alert-service, so the threshold has to live in one place or the dashboard and
 the evacuation app would disagree about how many people are in the room. Same
-reasoning sensor-service gives for grading readings server-side.
+reasoning esp32-sensor-service gives for grading readings server-side.
 
 WHY THE COUNT IS SMOOTHED DOWNSTREAM, NOT HERE. This endpoint reports what it
 sees in one frame. CrowdHuman scenes are densely occluded and a raw per-frame

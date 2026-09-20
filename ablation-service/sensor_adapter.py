@@ -1,5 +1,5 @@
 """
-sensor-service readings -> the ten sensor channels the models expect.
+esp32-sensor-service readings -> the ten sensor channels the models expect.
 
 THE MODEL WANTS DELTAS, AND EXCLUDES THE BASELINES THEY ARE MEASURED FROM. The
 manifest lists `mq2_baseline` and `mq7_baseline` as leaky -- a per-experiment
@@ -205,7 +205,7 @@ class SensorAdapter:
         None while the baseline is still being measured. Raises SensorGapError
         once the node has been silent long enough that holding its last reading
         through a developing fire would be an invention -- the same failure
-        sensor-service guards against by going stale rather than looking green.
+        esp32-sensor-service guards against by going stale rather than looking green.
         """
         if self.baselining and self.baseline_mode != "manual":
             if window_t >= self.baseline_s:

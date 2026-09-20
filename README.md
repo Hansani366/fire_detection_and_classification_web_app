@@ -46,8 +46,8 @@ mid-demo-vision-system/
 ├── human-detection-yolo-service/  # YOLO11s (CrowdHuman) person detection + counting
 ├── vlm-service/       # Gemini 2.5 Flash scene confirmation API
 ├── alert-service/     # Mobile alert backend — FCM push + zones/incidents/history (SQLite)
-├── esp32-service/     # ESP32-CAM bridge — relays the board's MJPEG stream same-origin
-├── sensor-service/    # ESP32 sensor bridge — receives MQ-2 / MQ-7 / flame / DHT22 telemetry
+├── esp32-cam-service/     # ESP32-CAM bridge — relays the board's MJPEG stream same-origin
+├── esp32-sensor-service/    # ESP32 sensor bridge — receives MQ-2 / MQ-7 / flame / DHT22 telemetry
 ├── ablation-service/  # Six-combination ablation testing (trained fusion + sensor models)
 ├── ablation-data/     # Your own recorded experiments (git-ignored; see its README)
 ├── nginx/             # HTTPS reverse proxy (self-signed cert)
@@ -78,7 +78,14 @@ cp sample.env .env
 # 4. Build and run (nginx generates a self-signed cert at build time)
 docker compose up --build
 
-# 5. Open in browser
+# 5. Upgrading from before the service rename? Remove the old containers first.
+#    esp32-service became esp32-cam-service and sensor-service became
+#    esp32-sensor-service. The old containers survive a plain `down`, and the
+#    old sensor bridge still holds host port 8022 — so the renamed one cannot
+#    start until they are gone.
+docker compose down --remove-orphans
+
+# 6. Open in browser
 open https://localhost
 ```
 
@@ -200,7 +207,7 @@ same LAN can reach it over plain HTTP without the self-signed-cert dance.
 > Push is optional: without `alert-service/secrets/firebase-sa.json` the service runs
 > normally and simply skips notifications.
 
-**ESP32 bridge configuration** (`esp32-service`, all optional except the first):
+**ESP32 bridge configuration** (`esp32-cam-service`, all optional except the first):
 
 | Env var | Default | Meaning |
 |---------|---------|---------|
@@ -228,7 +235,7 @@ addresses move, and a network of nodes would mean a list of addresses to maintai
 here. Pushing inverts all of that: each node only needs this machine's address, and
 adding a node costs no configuration at all.
 
-`sensor-service` publishes **`8022`** directly to the host so the boards can POST
+`esp32-sensor-service` publishes **`8022`** directly to the host so the boards can POST
 over plain HTTP, for the same reason `alert-service` publishes `8090` — an ESP32
 has no business fighting a self-signed certificate. The browser reaches the same
 service through nginx over HTTPS, same-origin.
@@ -387,7 +394,7 @@ internal-only, so reach them through their containers:
 curl -s http://localhost:8090/health                                      # Alert service
 curl -s http://localhost:8022/health                                      # Sensor bridge
 docker compose exec human-detection-yolo-service curl -s http://localhost:8001/health
-docker compose exec esp32-service curl -s http://localhost:8021/health    # ESP32 bridge
+docker compose exec esp32-cam-service curl -s http://localhost:8021/health    # ESP32 bridge
 curl -sk https://localhost/api/ablation/health                            # Ablation service
 ```
 
@@ -428,14 +435,14 @@ empty field means "use `ESP32_CAM_URL`".
 
 ```bash
 # Is the board reachable from inside the bridge container?
-docker compose exec esp32-service curl -s -o /dev/null -w '%{http_code}\n' http://192.168.1.50/still
+docker compose exec esp32-cam-service curl -s -o /dev/null -w '%{http_code}\n' http://192.168.1.50/still
 
 # Bridge's view of the board (also what the dashboard polls)
 curl -sk https://localhost/api/esp32/health
 ```
 
 > **`ESP32_CAM_URL` is read at container start.** After editing `.env`, run
-> `docker compose up -d --force-recreate esp32-service` — a plain `restart` keeps the old value.
+> `docker compose up -d --force-recreate esp32-cam-service` — a plain `restart` keeps the old value.
 
 **Why a bridge service rather than pointing the browser at the board?** The dashboard is
 HTTPS-only, so a plain-HTTP `<img>` from the board is blocked as mixed content — and even if

@@ -39,9 +39,9 @@ services:
   # Same-origin proxy for the board's MJPEG stream. The dashboard is HTTPS, so it
   # cannot load http://<board-ip>/stream directly (mixed content) and a cross-origin
   # <img> would taint the capture canvas.
-  esp32-service:
-    build: ./esp32-service
-    container_name: firewatch-esp32
+  esp32-cam-service:
+    build: ./esp32-cam-service
+    container_name: firewatch-esp32-cam
     restart: unless-stopped
     expose:
       - "8021"
@@ -54,9 +54,9 @@ services:
   # Publishes :8022 directly so the boards can POST over plain HTTP on the LAN
   # — same reasoning as alert-service:8090, an ESP32 should not have to accept
   # nginx's self-signed cert. Browsers reach it through nginx over HTTPS.
-  sensor-service:
-    build: ./sensor-service
-    container_name: firewatch-sensors
+  esp32-sensor-service:
+    build: ./esp32-sensor-service
+    container_name: firewatch-esp32-sensors
     restart: unless-stopped
     expose:
       - "8022"
@@ -107,7 +107,7 @@ services:
     environment:
       - FIRE_YOLO_URL=http://fire-detection-yolo-service:8000/detect
       - VLM_DETAILED_URL=http://vlm-service:8019/describe-image-detailed/
-      - SENSOR_LATEST_URL=http://sensor-service:8022/api/sensors/latest
+      - SENSOR_LATEST_URL=http://esp32-sensor-service:8022/api/sensors/latest
     volumes:
       # Real recordings are bind-mounted rather than uploaded: nginx caps
       # bodies at 10M, and a recording is thousands of frames. Read-only, so a
@@ -116,7 +116,7 @@ services:
     depends_on:
       - fire-detection-yolo-service
       - vlm-service
-      - sensor-service
+      - esp32-sensor-service
 
   # ── Mobile Alert Service (FCM push + app state) ───────────────
   # Holds zones/incidents/history, receives confirmed-fire events, sends push.
@@ -156,8 +156,8 @@ services:
     depends_on:
       - frontend
       - alert-service
-      - esp32-service
-      - sensor-service
+      - esp32-cam-service
+      - esp32-sensor-service
       # Not optional: nginx resolves proxy_pass hostnames at config load and
       # has no resolver, so a missing ablation-service stops nginx starting at
       # all — taking the whole stack down, not just this one route.

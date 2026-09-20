@@ -59,7 +59,7 @@ BLOCKED_ADDRS = {
 }
 
 logging.basicConfig(level=logging.INFO)
-log = logging.getLogger("esp32-service")
+log = logging.getLogger("esp32-cam-service")
 
 app = FastAPI(title="FireWatch ESP32-CAM Bridge")
 app.add_middleware(
@@ -368,7 +368,7 @@ async def health():
     active = STATE.get("active")
     return {
         "status": "ok",
-        "service": "esp32-service",
+        "service": "esp32-cam-service",
         "defaultHost": DEFAULT_CAM_URL or None,
         "activeStreams": 1 if active else 0,
         "bytesRelayed": STATE["bytes_relayed"],

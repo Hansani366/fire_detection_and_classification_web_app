@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# curl so `docker compose exec esp32-service curl .../health` works
+# curl so `docker compose exec esp32-cam-service curl .../health` works
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*

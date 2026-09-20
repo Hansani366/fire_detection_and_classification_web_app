@@ -238,7 +238,7 @@
 
    WHY MIRROR RATHER THAN OPEN A SECOND STREAM: the ESP32-CAM serves exactly
    one connection at a time, so a second <img> on the bridge would drop the
-   first (see esp32-service/main.py). Painting the same source into a canvas
+   first (see esp32-cam-service/main.py). Painting the same source into a canvas
    at requestAnimationFrame costs one connection and works identically for the
    webcam, so both sources take the same path.
 

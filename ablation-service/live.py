@@ -126,7 +126,7 @@ class LiveSession:
 
 async def _fetch_sensors(client: httpx.AsyncClient, url: str,
                          device_id: str | None) -> dict | None:
-    """Latest reading for one node, straight from sensor-service."""
+    """Latest reading for one node, straight from esp32-sensor-service."""
     try:
         resp = await client.get(url, timeout=5.0)
         resp.raise_for_status()

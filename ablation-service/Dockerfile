@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 # libgomp1 is XGBoost's OpenMP runtime -- without it `import xgboost` fails on
 # slim. curl so `docker compose exec ablation-service curl .../health` works,
-# the way sensor-service and esp32-service do.
+# the way esp32-sensor-service and esp32-cam-service do.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libgomp1 \
@@ -27,5 +27,6 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=40s \
 # Must stay single-worker: live sessions hold a per-experiment sequence buffer
 # and batch runs hold a job registry, both in-process. A second worker would
 # serve half the sessions and report the rest as missing -- the same reason
-# alert-service, esp32-service and sensor-service are pinned to one worker.
+# alert-service, esp32-cam-service and esp32-sensor-service are pinned to
+# one worker.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8023", "--workers", "1"]

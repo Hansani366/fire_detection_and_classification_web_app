@@ -125,12 +125,12 @@ FLAME_DARK_COUNTS = 3900.0
 FLAME_BRIGHT_COUNTS = 400.0
 # Verbatim from the generator: flame_present = flame_value > 0.18
 FLAME_PRESENT_THRESHOLD = 0.18
-# Matches sensor-service's SENSOR_STALE_AFTER_S, so both agree on when a node
-# has stopped talking.
+# Matches esp32-sensor-service's SENSOR_STALE_AFTER_S, so both agree on when
+# a node has stopped talking.
 SENSOR_STALE_AFTER_S = 15.0
 # Holding a dead node's last reading through a fire is the exact failure
-# sensor-service warns about, so past this the experiment aborts rather than
-# quietly inventing data.
+# esp32-sensor-service warns about, so past this the experiment aborts
+# rather than quietly inventing data.
 SENSOR_GAP_ABORT_S = 30.0
 # The board's ppm conversion is a linear rescale of the ADC, so raw can be
 # recovered when only ppm was recorded. From the node sketch.

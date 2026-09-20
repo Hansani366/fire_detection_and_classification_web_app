@@ -161,7 +161,7 @@ async function poll() {
       setHeadState('err', 'Bridge down');
       renderEmpty(
         'Sensor bridge unreachable',
-        'Is sensor-service running? docker compose ps sensor-service'
+        'Is esp32-sensor-service running? docker compose ps esp32-sensor-service'
       );
       if (state.onUpdate) state.onUpdate(null);
     }
