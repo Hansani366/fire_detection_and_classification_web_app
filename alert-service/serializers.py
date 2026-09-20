@@ -71,14 +71,58 @@ def event_json(inc: dict) -> dict:
     }
 
 
+def muster_json(inc: dict) -> dict:
+    """Evacuation progress, derived from the human detector where possible.
+
+    OCCUPANCY IS NOT MUSTER, AND THE TWO MOVE IN OPPOSITE DIRECTIONS. The camera
+    counts people *still in the zone*; `present` means people *accounted for*
+    away from it. So the head-count that was in the room when the fire started
+    becomes the total, and everyone no longer visible has, as far as we can
+    tell, got out:
+
+        total   = peak occupancy seen since the incident opened
+        present = peak - current occupancy
+
+    As the zone empties, current falls to 0 and present rises to meet total.
+
+    THIS SEES ONE CAMERA'S FIELD OF VIEW, not the whole zone. Someone who was
+    never in frame is never in the total, and someone who walks out of shot
+    counts as evacuated. It is a far better number than the synthetic constant
+    it replaces, but it is an estimate and the app should treat it as one.
+
+    Falls back to the stored (synthetic) figures when no occupancy was ever
+    recorded — an incident from before this existed, or one raised while the
+    human detector was down.
+    """
+    peak = inc.get("occupancy_peak")
+    if peak is None:
+        return {
+            "present": inc.get("muster_present", 42),
+            "total": inc.get("muster_total", 45),
+            "source": "estimated",
+        }
+    # An unknown current count must NOT read as an empty room: "we lost the
+    # camera" would otherwise render as "everyone is out", which is the one
+    # error this number must never make. Assume nobody has left instead.
+    current = inc.get("occupancy_current")
+    if current is None:
+        current = peak
+    return {
+        "present": max(0, peak - current),
+        "total": peak,
+        "source": "vision",
+    }
+
+
 def incident_json(inc: dict, zone: dict) -> dict:
     return {
         "id": inc["id"],
         "zone": zone_json(zone),
         "event": event_json(inc),
-        "muster": {
-            "present": inc.get("muster_present", 42),
-            "total": inc.get("muster_total", 45),
+        "muster": muster_json(inc),
+        "occupancy": {
+            "current": inc.get("occupancy_current"),
+            "peak": inc.get("occupancy_peak"),
         },
     }
 
@@ -111,6 +155,7 @@ def history_json(inc: dict, zone_name: str, floor: str) -> dict:
         "floor": floor,
         "resolution": inc.get("resolution") or "auto_cleared",
         "peakConfidencePct": round((inc.get("confidence") or 0) * 100),
+        "peakOccupancy": inc.get("occupancy_peak"),
         "cause": None,
         "sceneNotes": _scene_notes(inc),
     }

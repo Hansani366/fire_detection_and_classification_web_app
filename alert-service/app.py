@@ -38,6 +38,9 @@ class FireEventIn(BaseModel):
     confidence: float | None = 0.0
     description: str | None = ""
     detectedAt: str | None = None
+    # People the human detector can see in the zone. None means it had nothing
+    # to report, which is not the same as an empty room — see db.touch_incident.
+    occupancy: int | None = None
 
 
 class ClearIn(BaseModel):
@@ -46,6 +49,7 @@ class ClearIn(BaseModel):
 
 class TestAlertIn(BaseModel):
     zoneId: str | None = None
+    occupancy: int | None = None
 
 
 # ── Lifespan: open DB, init FCM, run the auto-clear watchdog ──────────────────
@@ -141,6 +145,7 @@ async def get_history():
 async def report_fire(body: FireEventIn):
     return await intake.handle_confirmed_fire(
         _db(), body.zoneId, body.type, body.confidence, body.description, body.detectedAt,
+        occupancy=body.occupancy,
     )
 
 
@@ -152,8 +157,11 @@ async def report_clear(body: ClearIn):
 @app.post("/api/test-alert")
 async def test_alert(body: TestAlertIn | None = None):
     zone_id = (body.zoneId if body and body.zoneId else DEFAULT_ZONE_ID)
+    # A non-zero occupancy by default, so a demo alert exercises the muster
+    # path the human detector feeds rather than falling back to the estimate.
+    occupancy = body.occupancy if body and body.occupancy is not None else 7
     return await intake.handle_confirmed_fire(
         _db(), zone_id, "fire", 0.92,
         "Open flames are visible among the fabric rolls with smoke rising toward the ceiling.",
-        None, force=True,
+        None, force=True, occupancy=occupancy,
     )

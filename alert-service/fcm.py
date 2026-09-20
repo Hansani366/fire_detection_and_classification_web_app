@@ -48,13 +48,27 @@ def is_ready() -> bool:
     return _ready
 
 
+def _notification_body(ctx: dict) -> str:
+    """People still in the zone is the most actionable thing on a lock screen,
+    so it goes in the body when the human detector has a number. A count of
+    None means it had nothing to say — say nothing rather than imply zero."""
+    occupancy = ctx.get("occupancy")
+    if occupancy is None:
+        return "Two AI checks confirmed flames. Tap for your safe route."
+    if occupancy == 0:
+        return "Two AI checks confirmed flames. No one detected in the zone."
+    people = "1 person" if occupancy == 1 else f"{occupancy} people"
+    return f"Two AI checks confirmed flames. {people} still in the zone."
+
+
 def _build_message(token: str, ctx: dict):
     m = _messaging
+    occupancy = ctx.get("occupancy")
     return m.Message(
         token=token,
         notification=m.Notification(
             title=f"🔥 Fire detected — {ctx['zone_name']}, {ctx['floor']}",
-            body="Two AI checks confirmed flames. Tap for your safe route.",
+            body=_notification_body(ctx),
         ),
         data={
             "type": "fire_alert",
@@ -68,6 +82,9 @@ def _build_message(token: str, ctx: dict):
             "confidence": str(ctx["confidence"]),
             "description": str(ctx["description"] or ""),
             "detectedAt": str(ctx["detected_at"]),
+            # Empty string rather than "None" when unknown — the Dart side
+            # parses these as strings and "None" would read as a real value.
+            "occupancy": "" if occupancy is None else str(occupancy),
         },
         android=m.AndroidConfig(
             priority="high",

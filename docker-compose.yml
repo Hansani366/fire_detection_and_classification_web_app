@@ -1,12 +1,29 @@
 services:
 
-  # ── YOLO Detection Service ────────────────────────────────────
-  yolo-service:
-    build: ./yolo-service
-    container_name: firewatch-yolo
+  # ── Fire & Smoke Detection (YOLO11) ───────────────────────────
+  # Drives the alarm: its boxes are what the VLM is asked to confirm.
+  fire-detection-yolo-service:
+    build: ./fire-detection-yolo-service
+    container_name: firewatch-fire-yolo
     restart: unless-stopped
     expose:
       - "8000"
+
+  # ── Human Detection (YOLO11s / CrowdHuman) ────────────────────
+  # Occupancy counting. Scored on the same frame as the fire detector but in a
+  # separate container so the two run concurrently — wall-clock cost is
+  # max(fire, human), not the sum — and so a failure here can never stall or
+  # crash the alarm path. The frontend proxy treats it as strictly optional.
+  human-detection-yolo-service:
+    build: ./human-detection-yolo-service
+    container_name: firewatch-human-yolo
+    restart: unless-stopped
+    expose:
+      - "8001"
+    environment:
+      # Counting is more threshold-sensitive than alarming — every surviving
+      # box is +1 person on an evacuation head-count.
+      - HUMAN_MIN_CONF=${HUMAN_MIN_CONF:-0.40}
 
   # ── VLM Vision Service ────────────────────────────────────────
   vlm-service:
@@ -64,10 +81,12 @@ services:
     expose:
       - "3000"
     environment:
-      - YOLO_URL=http://yolo-service:8000/detect
+      - FIRE_YOLO_URL=http://fire-detection-yolo-service:8000/detect
+      - HUMAN_YOLO_URL=http://human-detection-yolo-service:8001/detect
       - GEMINI_URL=http://vlm-service:8019/describe-image/
     depends_on:
-      - yolo-service
+      - fire-detection-yolo-service
+      - human-detection-yolo-service
       - vlm-service
 
   # ── Mobile Alert Service (FCM push + app state) ───────────────
@@ -92,7 +111,7 @@ services:
       - ./alert-service/secrets:/secrets:ro   # drop firebase-sa.json in here to enable push
       - alert-data:/data                      # SQLite lives here (survives restarts)
     depends_on:
-      - yolo-service
+      - fire-detection-yolo-service
       - vlm-service
 
   # ── HTTPS Reverse Proxy ───────────────────────────────────────

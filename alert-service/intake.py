@@ -40,12 +40,17 @@ def _zone_status_for(det_type: str) -> str:
     return "smoke" if det_type == "smoke" else "fire"
 
 
-async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, detected_at, force=False) -> dict:
+async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, detected_at,
+                                force=False, occupancy=None) -> dict:
     """
     Called on every confirmed-fire event. Returns {"incidentId", "created"}.
     De-dupes: repeat events for an already-active incident refresh it silently;
     a zone that just cleared stays quiet for COOLDOWN_SECONDS. `force=True`
     (used by /api/test-alert) skips the cooldown so demos always fire.
+
+    `occupancy` is how many people the human detector can see in the zone, or
+    None if it had nothing to report. It refreshes on every repeat event, so the
+    muster count tracks the room emptying — see serializers.muster_json.
     """
     if zone_id not in ZONES_BY_ID:
         log.warning("Unknown zone '%s' — falling back to %s.", zone_id, DEFAULT_ZONE_ID)
@@ -53,12 +58,14 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
     det_type = det_type or "fire"
     confidence = float(confidence or 0.0)
     detected_at = detected_at or _utcnow().isoformat(timespec="seconds").replace("+00:00", "Z")
+    occupancy = None if occupancy is None else max(0, int(occupancy))
 
     async with _lock:
         active = await store.get_active_incident_for_zone(db, zone_id)
         if active:
             await store.touch_incident(db, active["id"], confidence, description,
-                                       _utcnow().isoformat(timespec="seconds").replace("+00:00", "Z"))
+                                       _utcnow().isoformat(timespec="seconds").replace("+00:00", "Z"),
+                                       occupancy)
             return {"incidentId": active["id"], "created": False, "reason": "already_active"}
 
         last = await store.get_last_resolved_for_zone(db, zone_id)
@@ -69,16 +76,19 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
                 return {"incidentId": None, "created": False, "reason": "cooldown"}
 
         incident_id = f"inc_{uuid4().hex[:8]}"
-        inc = await store.create_incident(db, incident_id, zone_id, det_type, confidence, description, detected_at)
+        inc = await store.create_incident(db, incident_id, zone_id, det_type, confidence,
+                                          description, detected_at, occupancy)
         await store.set_zone_status(db, zone_id, _zone_status_for(det_type))
-        log.info("New incident %s in zone %s (type=%s conf=%.2f).", incident_id, zone_id, det_type, confidence)
+        log.info("New incident %s in zone %s (type=%s conf=%.2f occupancy=%s).",
+                 incident_id, zone_id, det_type, confidence,
+                 "unknown" if occupancy is None else occupancy)
 
     # Push outside the lock (network I/O shouldn't block the intake path).
     zone = ZONES_BY_ID[zone_id]
     ctx = {
         "id": inc["id"], "zone_id": zone_id, "zone_name": zone["name"], "floor": zone["floor"],
         "detector_id": zone["detector_id"], "type": det_type, "confidence": confidence,
-        "description": description, "detected_at": detected_at,
+        "description": description, "detected_at": detected_at, "occupancy": occupancy,
     }
     tokens = await store.list_tokens(db)
     dead = fcm.send_fire_push(tokens, ctx)

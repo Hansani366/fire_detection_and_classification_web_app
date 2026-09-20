@@ -57,9 +57,28 @@ CREATE TABLE IF NOT EXISTS incidents (
     resolution     TEXT,     -- user_confirmed | auto_cleared | false_alarm
     last_event_at  TEXT,     -- refreshed on every fire event; drives the auto-clear watchdog
     muster_present INTEGER,
-    muster_total   INTEGER
+    muster_total   INTEGER,
+    occupancy_current INTEGER, -- people the camera sees in the zone right now
+    occupancy_peak    INTEGER  -- most it has seen since this incident opened
 );
 """
+
+# Columns added after the first release. The SQLite file lives in a Docker
+# volume that survives `compose down`, so an existing deployment already has an
+# incidents table and CREATE TABLE IF NOT EXISTS will not add them.
+_ADDED_COLUMNS = (
+    ("occupancy_current", "INTEGER"),
+    ("occupancy_peak", "INTEGER"),
+)
+
+
+async def _migrate(db: aiosqlite.Connection) -> None:
+    async with db.execute("PRAGMA table_info(incidents)") as cur:
+        existing = {r["name"] for r in await cur.fetchall()}
+    for name, decl in _ADDED_COLUMNS:
+        if name not in existing:
+            await db.execute(f"ALTER TABLE incidents ADD COLUMN {name} {decl}")
+    await db.commit()
 
 
 async def connect() -> aiosqlite.Connection:
@@ -71,6 +90,7 @@ async def connect() -> aiosqlite.Connection:
 
 async def init_db(db: aiosqlite.Connection) -> None:
     await db.executescript(_SCHEMA)
+    await _migrate(db)
     # Seed the 7 zones if they don't already exist (preserves status across restarts).
     now = _utcnow()
     for z in ZONES:
@@ -131,15 +151,17 @@ async def set_zone_status(db, zone_id: str, status: str, last_scan_at: str | Non
 
 # ── Incidents ────────────────────────────────────────────────────────────────
 
-async def create_incident(db, incident_id, zone_id, det_type, confidence, description, detected_at) -> dict:
+async def create_incident(db, incident_id, zone_id, det_type, confidence, description,
+                          detected_at, occupancy=None) -> dict:
     now = _utcnow()
     await db.execute(
         """INSERT INTO incidents
              (id, zone_id, type, confidence, description, detected_at, status,
-              created_at, resolved_at, resolution, last_event_at, muster_present, muster_total)
-           VALUES (?, ?, ?, ?, ?, ?, 'active', ?, NULL, NULL, ?, ?, ?)""",
+              created_at, resolved_at, resolution, last_event_at, muster_present, muster_total,
+              occupancy_current, occupancy_peak)
+           VALUES (?, ?, ?, ?, ?, ?, 'active', ?, NULL, NULL, ?, ?, ?, ?, ?)""",
         (incident_id, zone_id, det_type, confidence, description, detected_at,
-         now, now, DEFAULT_MUSTER_PRESENT, DEFAULT_MUSTER_TOTAL),
+         now, now, DEFAULT_MUSTER_PRESENT, DEFAULT_MUSTER_TOTAL, occupancy, occupancy),
     )
     await db.commit()
     return await get_incident(db, incident_id)
@@ -190,13 +212,26 @@ async def get_resolved_incidents(db, limit: int = 50) -> list[dict]:
         return [dict(r) for r in await cur.fetchall()]
 
 
-async def touch_incident(db, incident_id, confidence, description, last_event_at) -> None:
-    """Refresh an active incident on a repeat fire event (keeps the peak confidence)."""
+async def touch_incident(db, incident_id, confidence, description, last_event_at,
+                         occupancy=None) -> None:
+    """Refresh an active incident on a repeat fire event (keeps the peak confidence).
+
+    A null occupancy means the human detector had nothing to say for this frame
+    (service down, or the dashboard has not counted yet) — that must leave the
+    stored numbers untouched rather than resetting the zone to "empty".
+    """
     await db.execute(
         """UPDATE incidents
-             SET confidence = MAX(confidence, ?), description = ?, last_event_at = ?
+             SET confidence = MAX(confidence, ?),
+                 description = ?,
+                 last_event_at = ?,
+                 occupancy_current = COALESCE(?, occupancy_current),
+                 occupancy_peak = CASE
+                     WHEN ? IS NULL THEN occupancy_peak
+                     ELSE MAX(COALESCE(occupancy_peak, 0), ?)
+                 END
            WHERE id = ?""",
-        (confidence, description, last_event_at, incident_id),
+        (confidence, description, last_event_at, occupancy, occupancy, occupancy, incident_id),
     )
     await db.commit()
 

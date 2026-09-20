@@ -1,20 +1,23 @@
 # 🔥 FireWatch AI — Fire & Smoke Detection System
 
-A real-time fire detection system using **YOLOv11** for object detection and **Gemini 2.5 Flash** for scene confirmation, built on a modular microservices architecture behind an **nginx HTTPS proxy**. Confirmed fires are recorded and pushed to a companion **mobile app** through a dedicated alert service (Firebase Cloud Messaging).
+A real-time fire detection system using **YOLOv11** for object detection and **Gemini 2.5 Flash** for scene confirmation, built on a modular microservices architecture behind an **nginx HTTPS proxy**. A second YOLO11s model counts **people in the scene**, so a confirmed fire carries a live head-count. Confirmed fires are recorded and pushed to a companion **mobile app** through a dedicated alert service (Firebase Cloud Messaging).
 
 ---
 
 ## Architecture
 
 ```
-Browser ──HTTPS──▶ nginx (443/80) ──▶ Frontend (3000) ──┬─▶ YOLO Service  (8000)
+Browser ──HTTPS──▶ nginx (443/80) ──▶ Frontend (3000) ──┬─▶ Fire Detection YOLO  (8000)
+                                                         ├─▶ Human Detection YOLO (8001)
                                                          ├─▶ VLM Service   (8019)
                                                          └─▶ Alert Service (8090) ──FCM──▶ 📱 Mobile App
                                     ├─▶ ESP32 Bridge (8021) ──HTTP──▶ 📷 ESP32-CAM (on your LAN)
                                     └─▶ Sensor Bridge (8022) ◀──HTTP── 🌡️ ESP32 sensor nodes (push)
 ```
 
-**Flow:** Camera (laptop webcam **or** ESP32-CAM) → YOLO detects fire/smoke (≥35% confidence) → VLM confirms the scene → 🚨 Alarm when **both agree** → Alert Service records the incident and pushes an FCM notification to the mobile app.
+**Flow:** Camera (laptop webcam **or** ESP32-CAM) → one frame is scored by **both** detectors concurrently → fire/smoke (≥35% confidence) goes to the VLM for confirmation → 🚨 Alarm when **both agree** → Alert Service records the incident, **with the people count**, and pushes an FCM notification to the mobile app.
+
+The dashboard shows the two detectors **side by side** over the same frame: fire and smoke boxes on the left, numbered person boxes on the right.
 
 > nginx publishes 80/443; the frontend, YOLO, and VLM services stay on the internal
 > Docker network. The **alert service** additionally publishes `8090` to the host so the
@@ -29,7 +32,8 @@ Browser ──HTTPS──▶ nginx (443/80) ──▶ Frontend (3000) ──┬�
 ```
 mid-demo-vision-system/
 ├── frontend/          # FastAPI server + static HTML/CSS/JS dashboard
-├── yolo-service/      # YOLOv11 fire & smoke detection API
+├── fire-detection-yolo-service/   # YOLOv11 fire & smoke detection API
+├── human-detection-yolo-service/  # YOLO11s (CrowdHuman) person detection + counting
 ├── vlm-service/       # Gemini 2.5 Flash scene confirmation API
 ├── alert-service/     # Mobile alert backend — FCM push + zones/incidents/history (SQLite)
 ├── esp32-service/     # ESP32-CAM bridge — relays the board's MJPEG stream same-origin
@@ -49,8 +53,10 @@ mid-demo-vision-system/
 cp sample.env .env
 # Add your Google API key (GOOGLE_API_KEY) to .env
 
-# 2. Place your YOLO model
-cp your_model.pt yolo-service/best.pt
+# 2. Both YOLO models are already committed as
+#      fire-detection-yolo-service/best.pt
+#      human-detection-yolo-service/best.pt   (crowdhuman_yolo11s_best.pt)
+#    Replace either with your own .pt to swap models.
 
 # 3. (optional) Enable mobile push notifications
 #    Drop a Firebase service-account key at:
@@ -73,7 +79,8 @@ open https://localhost
 
 | Component | Technology |
 |-----------|------------|
-| Object Detection | YOLOv11 (Ultralytics) |
+| Fire & Smoke Detection | YOLOv11 (Ultralytics) |
+| Human Detection & Counting | YOLO11s trained on CrowdHuman |
 | Scene Confirmation | Gemini 2.5 Flash (via LangChain) |
 | Frontend | HTML / CSS / vanilla JS + FastAPI |
 | Alert Backend | FastAPI + SQLite |
@@ -82,6 +89,68 @@ open https://localhost
 | Deployment | Docker Compose |
 
 ---
+
+## Human detection & occupancy
+
+A second YOLO model (`human-detection-yolo-service`) counts people in the same frame the fire
+detector scores. It is **YOLO11s trained on CrowdHuman**, single class `person`, 100 epochs at
+640px — chosen for dense, heavily occluded scenes:
+
+| Metric | Value |
+|---|---|
+| Precision | 0.870 |
+| Recall | 0.739 |
+| mAP@50 | 0.835 |
+| mAP@50–95 | 0.529 |
+
+**One upload, two models.** The browser posts a frame to `/api/detect` once; the frontend proxy
+fans it out to both detectors concurrently and returns both results together:
+
+```json
+{ "fire":  { "detections": [...] },
+  "human": { "detections": [...], "count": 7 },
+  "timings": { "fireMs": 118, "humanMs": 143 } }
+```
+
+Fanning out server-side matters for more than bandwidth: two separate browser calls would capture
+two *different* frames up to 500 ms apart, so the two overlays would describe different moments.
+The round trip costs `max(fire, human)` rather than their sum.
+
+**Fire is required; human is optional.** A human-service failure degrades to a null count and
+nothing else — the alarm path behaves exactly as it did before this existed. A null count is
+deliberately distinct from zero: a detector that is down must never read as an empty room.
+
+**The displayed count is a rolling median** of the last 5 frames (~2.5 s). Raw per-frame counts
+genuinely oscillate by a person or two on occluded crowds; a median rejects those spikes without
+the lag a moving average would add. Both numbers are on screen — the median as the headline, the
+raw frame count beneath it.
+
+| Env var | Default | Meaning |
+|---------|---------|---------|
+| `HUMAN_MIN_CONF` | `0.40` | Person confidence floor. Higher than the fire detector's 0.35 — a false person inflates an evacuation head-count, whereas a false smoke box only asks the VLM for a second opinion. |
+| `HUMAN_IOU` | `0.7` | NMS IoU. CrowdHuman labels genuinely overlapping people, so this stays permissive. |
+| `HUMAN_IMGSZ` | `640` | Inference size; matches training. |
+
+### Occupancy → the evacuation muster
+
+A confirmed fire now carries the head-count to `alert-service`, which uses it to replace the
+muster figure the mobile app previously received as a hardcoded constant.
+
+**Occupancy is not muster, and the two move in opposite directions.** The camera counts people
+*still in the zone*; `muster.present` means people *accounted for* away from it. So:
+
+```
+muster.total   = peak occupancy seen since the incident opened   (who was there)
+muster.present = peak − current occupancy                        (who has got out)
+```
+
+As the zone empties, `present` rises to meet `total`. The payload carries `"source": "vision"`
+when the number is measured and `"estimated"` when it fell back to the old constant — an incident
+raised while the human detector was down, or one predating this feature.
+
+> **This sees one camera's field of view, not the whole zone.** Someone never in frame is never in
+> the total, and someone who walks out of shot counts as evacuated. It is a far better number than
+> the constant it replaces, but it is an estimate.
 
 ## Mobile Alert Service
 
@@ -203,11 +272,26 @@ The alert service is published on the host, so hit it directly. YOLO and VLM are
 internal-only, so reach them through their containers:
 
 ```bash
-curl -s http://localhost:8090/health                                     # Alert service
-docker compose exec yolo-service curl -s http://localhost:8000/health    # YOLO
-docker compose exec vlm-service  curl -s http://localhost:8019/health    # VLM
-docker compose exec esp32-service curl -s http://localhost:8021/health   # ESP32 bridge
-curl -s http://localhost:8022/health                                     # Sensor bridge
+curl -s http://localhost:8090/health                                      # Alert service
+curl -s http://localhost:8022/health                                      # Sensor bridge
+docker compose exec human-detection-yolo-service curl -s http://localhost:8001/health
+docker compose exec esp32-service curl -s http://localhost:8021/health    # ESP32 bridge
+```
+
+> `fire-detection-yolo-service` and `vlm-service` have **no `curl`** in their images, so
+> `docker compose exec … curl` fails on those two. Use Python, which is always present:
+
+```bash
+docker compose exec fire-detection-yolo-service \
+  python -c "import urllib.request;print(urllib.request.urlopen('http://localhost:8000/health').read().decode())"
+docker compose exec vlm-service \
+  python -c "import urllib.request;print(urllib.request.urlopen('http://localhost:8019/health').read().decode())"
+```
+
+Score a still image through both detectors at once:
+
+```bash
+curl -sk -F file=@frame.jpg https://localhost/api/detect | python3 -m json.tool
 ```
 
 ---

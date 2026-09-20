@@ -16,12 +16,16 @@ app.add_middleware(
 
 # Load model on startup
 model = YOLO("best.pt")
-print(f"[YOLO] Model loaded. Classes: {model.names}")
+print(f"[FIRE] Model loaded. Classes: {model.names}")
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "classes": model.names}
+    return {
+        "status": "ok",
+        "service": "fire-detection-yolo-service",
+        "classes": model.names,
+    }
 
 
 @app.post("/detect")

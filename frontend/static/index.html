@@ -27,6 +27,10 @@
   --safe:        #16A34A;  --safe-bg:   #E7F6EC;  --safe-ink:   #0F7A38;  --safe-line: #C6EAD3;
   --warn:        #F59E0B;  --warn-bg:   #FEF4E2;  --warn-ink:   #B4740A;
   --danger:      #E5342A;  --danger-bg: #FDEBEA;  --danger-ink: #C0261D;  --danger-deep: #B21F16;
+  /* Human detection. Cyan against the fire palette's red is the one pairing
+     that stays distinguishable under every common form of colour blindness —
+     red/green would not — and it reads as information rather than alarm. */
+  --human:       #0891B2;  --human-bg:  #E0F5FA;  --human-ink:  #0E7490;  --human-line: #B8E6F0;
   --neutral-bg:  #EEF1F5;
   /* soft two-layer card shadow */
   --shadow-card: 0 1px 2px rgba(16,22,35,.04), 0 8px 24px rgba(16,22,35,.06);
@@ -166,15 +170,25 @@ html, body {
 /* ═══════════════════════════════════════════════════════════
    MAIN GRID
 ═══════════════════════════════════════════════════════════ */
+/* Split view: the detector panes need the full page width to stay legible, so
+   the camera card spans it and the info cards flow into a row beneath rather
+   than a side column. */
 .main-grid {
   display: grid;
-  grid-template-columns: 3fr 2fr;
+  grid-template-columns: 1fr;
   gap: 12px;
   align-items: start;
 }
-@media (max-width: 860px) {
-  .main-grid { grid-template-columns: 1fr; }
+.info-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  align-items: start;
 }
+@media (max-width: 1100px) { .info-row { grid-template-columns: 1fr; } }
+/* Cards are siblings in a grid here, so the stacked-card margin would add a
+   second gap on top of the grid's own. */
+.info-row > .fw-card + .fw-card { margin-top: 0; }
 
 /* ═══════════════════════════════════════════════════════════
    CARDS
@@ -249,15 +263,70 @@ html, body {
 
 /* ── FIX 1: canvas must match the container size in CSS
       and use internal resolution = container size too.
-      We do NOT use object-fit on the canvas — it sits
+      We do NOT use object-fit on the overlay canvases — they sit
       on top pixel-perfectly and we scale coords ourselves. ── */
-#overlay-canvas {
+.overlay-canvas {
   position: absolute;
   top: 0; left: 0;
   pointer-events: none;
   z-index: 6;
   /* width/height set by syncSize() in JS */
 }
+
+/* ── SPLIT VIEW ──────────────────────────────────────────────
+   Two panes over one camera. The left pane holds the real live element; the
+   right pane is a canvas mirror of it.
+
+   WHY MIRROR RATHER THAN OPEN A SECOND STREAM: the ESP32-CAM serves exactly
+   one connection at a time, so a second <img> on the bridge would drop the
+   first (see esp32-service/main.py). Painting the same source into a canvas
+   at requestAnimationFrame costs one connection and works identically for the
+   webcam, so both sources take the same path.
+
+   The mirror canvas carries the source's NATIVE resolution internally and is
+   laid out with object-fit:cover, exactly like <video>/<img> — which is what
+   lets one coverTransform() place boxes correctly in both panes. */
+.pane-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 900px) { .pane-grid { grid-template-columns: 1fr; } }
+
+.pane-head {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--display); font-weight: 700;
+  font-size: 0.68rem; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--ink3);
+  margin-bottom: 9px;
+}
+.pane-head .pane-swatch {
+  width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0;
+}
+.pane-head .pane-swatch.fire  { background: var(--danger); }
+.pane-head .pane-swatch.human { background: var(--human); }
+.pane-head .pane-count { margin-left: auto; letter-spacing: 0; color: var(--ink2); }
+
+#mirror-canvas {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.pane-foot {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  margin-top: 10px; min-height: 22px;
+}
+.pane-sum {
+  font-family: var(--body); font-size: 0.78rem; color: var(--ink2);
+  font-variant-numeric: tabular-nums;
+}
+.pane-model {
+  margin-left: auto;
+  font-size: 0.66rem; color: var(--ink3);
+  font-variant-numeric: tabular-nums;
+}
+.pane-model b { font-weight: 600; margin-left: 6px; color: var(--ink3); }
 
 /* Recording indicator */
 #rec-dot {
@@ -285,8 +354,9 @@ html, body {
 }
 @keyframes blink { 50% { opacity: .25; } }
 
-/* Placeholder when camera is off (dark viewport) */
-#cam-placeholder {
+/* Placeholder when camera is off (dark viewport) — shared by both panes */
+#cam-placeholder,
+#human-placeholder {
   position: absolute;
   inset: 0;
   display: flex;
@@ -296,16 +366,16 @@ html, body {
   gap: 10px;
   z-index: 1;
 }
-#cam-placeholder .ph-icon { width: 54px; height: 54px; color: rgba(255,255,255,.26); }
-#cam-placeholder .ph-icon svg { width: 100%; height: 100%; }
-#cam-placeholder .ph-title {
+.ph-icon { width: 54px; height: 54px; color: rgba(255,255,255,.26); }
+.ph-icon svg { width: 100%; height: 100%; }
+.ph-title {
   font-family: var(--display);
   font-weight: 700;
   font-size: 0.82rem;
   letter-spacing: 0.6px;
   color: rgba(255,255,255,.58);
 }
-#cam-placeholder .ph-hint {
+.ph-hint {
   font-family: var(--body);
   font-weight: 400;
   font-size: 0.74rem;
@@ -431,11 +501,12 @@ button:disabled {
 ═══════════════════════════════════════════════════════════ */
 .kpi-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 12px;
   margin-bottom: 12px;
 }
-@media (max-width: 720px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 1180px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 720px)  { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
 .kpi {
   display: flex; align-items: center; gap: 13px;
   background: var(--card);
@@ -454,6 +525,7 @@ button:disabled {
 .kpi-icon.i-blue  { background: #EAF4FF;            color: #1E5DAE; }
 .kpi-icon.i-amber { background: var(--warn-bg);     color: var(--warn-ink); }
 .kpi-icon.i-safe  { background: var(--safe-bg);     color: var(--safe); }
+.kpi-icon.i-human { background: var(--human-bg);    color: var(--human-ink); }
 .kpi-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .kpi-val {
   font-family: var(--display); font-weight: 800;
@@ -495,6 +567,9 @@ button:disabled {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--danger);
 }
+.det-badge.human { background: var(--human-bg); color: var(--human-ink); }
+.det-badge.human::before { background: var(--human); }
+
 .no-threat {
   display: flex; align-items: center; gap: 8px;
   font-family: var(--body);
@@ -502,6 +577,51 @@ button:disabled {
   color: var(--ink3);
 }
 .no-threat svg { width: 17px; height: 17px; color: var(--safe); flex-shrink: 0; }
+
+/* ── Current Detections: fire and people side by side ────────── */
+.det-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.det-col + .det-col {
+  border-left: 1px solid var(--line);
+  padding-left: 14px;
+}
+.det-col-head {
+  display: flex; align-items: center; gap: 7px;
+  font-family: var(--display); font-weight: 700;
+  font-size: 0.64rem; letter-spacing: 0.9px; text-transform: uppercase;
+  color: var(--ink3);
+  margin-bottom: 10px;
+}
+.det-col-head .pane-swatch { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+.det-col-head .pane-swatch.fire  { background: var(--danger); }
+.det-col-head .pane-swatch.human { background: var(--human); }
+
+/* Occupancy readout */
+.occ-now {
+  font-family: var(--display); font-weight: 800;
+  font-size: 1.85rem; line-height: 1;
+  color: var(--human-ink);
+  font-variant-numeric: tabular-nums;
+}
+.occ-now.none { color: var(--ink3); }
+.occ-unit {
+  font-size: 0.78rem; font-weight: 600; color: var(--ink3);
+  margin-left: 6px; letter-spacing: 0.2px;
+}
+.occ-meta {
+  margin-top: 8px;
+  display: flex; flex-direction: column; gap: 3px;
+  font-family: var(--body); font-size: 0.72rem; color: var(--ink3);
+  font-variant-numeric: tabular-nums;
+}
+.occ-meta b { font-weight: 700; color: var(--ink2); }
+.occ-down {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--body); font-size: 0.78rem; color: var(--ink3);
+}
 
 /* ═══════════════════════════════════════════════════════════
    VLM LOG
@@ -740,7 +860,25 @@ button:disabled {
       </div>
       <div class="kpi-body">
         <div class="kpi-val" id="s-detections">0</div>
-        <div class="kpi-lbl">Detections</div>
+        <div class="kpi-lbl">Fire Detections</div>
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon i-human">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      </div>
+      <div class="kpi-body">
+        <div class="kpi-val" id="s-people">—</div>
+        <div class="kpi-lbl">People Now</div>
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-icon i-human">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+      </div>
+      <div class="kpi-body">
+        <div class="kpi-val" id="s-peak">—</div>
+        <div class="kpi-lbl">Peak Occupancy</div>
       </div>
     </div>
     <div class="kpi">
@@ -782,22 +920,61 @@ button:disabled {
         <div class="cam-live" id="cam-live"><span class="cl-dot"></span>Offline</div>
       </div>
 
-      <div class="cam-wrap" id="cam-wrap">
-        <video id="preview-video" autoplay muted playsinline hidden></video>
-        <img id="esp32-view" alt="ESP32-CAM live view" hidden>
-        <canvas id="overlay-canvas"></canvas>
+      <div class="pane-grid">
 
-        <div id="rec-dot">
-          <span class="rec-blink"></span>REC
-        </div>
-
-        <div id="cam-placeholder">
-          <div class="ph-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        <!-- Fire pane — holds the real live element for both sources -->
+        <div class="pane">
+          <div class="pane-head">
+            <span class="pane-swatch fire"></span>Fire &amp; Smoke
+            <span class="pane-count" id="fire-count"></span>
           </div>
-          <span class="ph-title">CAMERA OFFLINE</span>
-          <span class="ph-hint">Press Start Monitoring to activate the feed</span>
+          <div class="cam-wrap" id="cam-wrap">
+            <video id="preview-video" autoplay muted playsinline hidden></video>
+            <img id="esp32-view" alt="ESP32-CAM live view" hidden>
+            <canvas id="overlay-fire" class="overlay-canvas"></canvas>
+
+            <div id="rec-dot">
+              <span class="rec-blink"></span>REC
+            </div>
+
+            <div id="cam-placeholder">
+              <div class="ph-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              </div>
+              <span class="ph-title">CAMERA OFFLINE</span>
+              <span class="ph-hint">Press Start Monitoring to activate the feed</span>
+            </div>
+          </div>
+          <div class="pane-foot">
+            <span class="pane-sum" id="fire-sum">Standby</span>
+            <span class="pane-model">YOLO11 · fire<b id="fire-ms"></b></span>
+          </div>
         </div>
+
+        <!-- Human pane — a canvas mirror of the same frame (see .pane-grid CSS) -->
+        <div class="pane">
+          <div class="pane-head">
+            <span class="pane-swatch human"></span>Human Detection
+            <span class="pane-count" id="human-count"></span>
+          </div>
+          <div class="cam-wrap" id="cam-wrap-human">
+            <canvas id="mirror-canvas"></canvas>
+            <canvas id="overlay-human" class="overlay-canvas"></canvas>
+
+            <div id="human-placeholder">
+              <div class="ph-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </div>
+              <span class="ph-title">NO FEED</span>
+              <span class="ph-hint">Occupancy counting starts with the camera</span>
+            </div>
+          </div>
+          <div class="pane-foot">
+            <span class="pane-sum" id="human-sum">Standby</span>
+            <span class="pane-model">YOLO11s · crowdhuman<b id="human-ms"></b></span>
+          </div>
+        </div>
+
       </div>
 
       <div class="src-row">
@@ -826,21 +1003,33 @@ button:disabled {
       </div>
 
       <div class="svc-row">
-        <div class="svc-pill"><span class="svc-dot idle" id="dot-yolo"></span>YOLO Detector</div>
+        <div class="svc-pill"><span class="svc-dot idle" id="dot-yolo"></span>Fire Detector</div>
+        <div class="svc-pill"><span class="svc-dot idle" id="dot-human"></span>Human Detector</div>
         <div class="svc-pill"><span class="svc-dot idle" id="dot-vlm"></span>VLM Analysis</div>
         <div class="svc-pill"><span class="svc-dot idle" id="dot-cam"></span><span id="cam-src-label">Camera</span></div>
       </div>
     </div>
 
-    <!-- ── Info column ── -->
-    <div>
+    <!-- ── Info row ── -->
+    <div class="info-row">
       <div class="fw-card">
         <div class="card-title">Current Detections</div>
-        <div id="det-container">
-          <span class="no-threat">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            No threats detected
-          </span>
+        <div class="det-split">
+          <div class="det-col">
+            <div class="det-col-head"><span class="pane-swatch fire"></span>Fire</div>
+            <div id="det-container">
+              <span class="no-threat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                No threats
+              </span>
+            </div>
+          </div>
+          <div class="det-col">
+            <div class="det-col-head"><span class="pane-swatch human"></span>People</div>
+            <div id="occ-container">
+              <span class="occ-now none">—</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -874,13 +1063,29 @@ button:disabled {
 /* ═══════════════════════════════════════════════════════════
    CONFIG
 ═══════════════════════════════════════════════════════════ */
-const DETECT_INTERVAL_MS  = 500;   // how often to grab a frame and call YOLO
+const DETECT_INTERVAL_MS  = 500;   // how often to grab a frame and call the detectors
 const MIN_CONF            = 0.35;  // ← lowered from 0.5 so more detections pass through
 const MAX_LOG_ENTRIES     = 12;
 const DETECTION_HOLD_MS   = 2500;  // keep boxes on screen this long after last YOLO hit
 const VLM_CONFIRM_REQUIRED = true; // set false to alarm on YOLO alone (useful for debugging)
 const CAMERA_ZONE_ID       = 'fabric-store'; // detector this dashboard reports as (→ alert-service → phone push)
 const ESP32_HEALTH_POLL_MS = 5000; // how often to re-check the board while it is the live source
+
+/* Occupancy is a rolling MEDIAN of the last few frames, not the raw count.
+   CrowdHuman scenes are densely occluded, so a per-frame count genuinely
+   oscillates by a person or two between frames on a static scene — a headline
+   number that flickers 6→8→7 reads as broken. A median rejects those single
+   -frame spikes without lagging a real change the way a mean would. Five
+   frames ≈ 2.5s at the detection interval: long enough to be steady, short
+   enough that a room emptying shows up almost immediately.
+   The person confidence threshold is NOT here — it lives in the human service,
+   because the same count feeds the incident muster (see its module docstring). */
+const OCC_WINDOW = 5;
+
+/* Boxes are drawn in the pane colours: red for fire, cyan for people. Kept as
+   literals alongside the fire colour the overlay has always used. */
+const FIRE_BOX_COLOR  = '#E5342A';
+const HUMAN_BOX_COLOR = '#06B6D4';
 
 /* ═══════════════════════════════════════════════════════════
    STATE
@@ -898,7 +1103,23 @@ const S = {
   fpsCount:           0,
   lastDetectionTime:  0,   // FIX 2: timestamp of last YOLO hit — for hold logic
   pendingVlm:         false,
+  pendingDetect:      false, // a detect round trip is in flight — skip this tick
   reported:           false, // have we already reported this alarm to alert-service?
+
+  /* ── Occupancy ──
+     occRaw is the latest single-frame count; occNow is the median over
+     occSamples and is the number everything else uses — the KPI, the pane
+     header, and the figure sent to alert-service. Null means "we do not
+     know", which is deliberately distinct from 0: a human detector that is
+     down must never be read as an empty room. */
+  occRaw:             null,
+  occNow:             null,
+  occPeak:            null,
+  occSamples:         [],
+  lastHumanDets:      [],
+  humanHealthy:       true,
+  fireMs:             null,
+  humanMs:            null,
 
   /* Bumped whenever the feed is torn down. In-flight VLM calls carry the
      generation they started in and drop their result if it has moved on —
@@ -920,10 +1141,24 @@ const S = {
 const $           = id => document.getElementById(id);
 const video       = $('preview-video');
 const esp32View   = $('esp32-view');
-const canvas      = $('overlay-canvas');
-const ctx         = canvas.getContext('2d');
 const camWrap     = $('cam-wrap');
 const placeholder = $('cam-placeholder');
+
+/* Each pane is an overlay canvas over a media element. FIRE holds the real
+   live source; HUMAN holds a canvas mirror of it (see the .pane-grid CSS for
+   why the ESP32 cannot simply be opened twice). */
+const FIRE  = { canvas: $('overlay-fire'),  wrap: camWrap };
+const HUMAN = { canvas: $('overlay-human'), wrap: $('cam-wrap-human') };
+FIRE.ctx  = FIRE.canvas.getContext('2d');
+HUMAN.ctx = HUMAN.canvas.getContext('2d');
+
+const mirror    = $('mirror-canvas');
+const mirrorCtx = mirror.getContext('2d');
+const humanPh   = $('human-placeholder');
+
+/* The fire overlay is the one the existing code refers to as `canvas`/`ctx`. */
+const canvas = FIRE.canvas;
+const ctx    = FIRE.ctx;
 const recDot      = $('rec-dot');
 const alarmBanner = $('alarm-banner');
 const alarmAudio  = $('alarm-audio');
@@ -931,12 +1166,22 @@ const btnStart    = $('btn-start');
 const btnStop     = $('btn-stop');
 const btnReset    = $('btn-reset');
 const sDet        = $('s-detections');
+const sPeople     = $('s-people');
+const sPeak       = $('s-peak');
 const sVlm        = $('s-vlm');
 const sFps        = $('s-fps');
 const sAlarm      = $('s-alarm');
 const detCont     = $('det-container');
+const occCont     = $('occ-container');
+const fireCount   = $('fire-count');
+const humanCount  = $('human-count');
+const fireSum     = $('fire-sum');
+const humanSum    = $('human-sum');
+const fireMsEl    = $('fire-ms');
+const humanMsEl   = $('human-ms');
 const vlmLog      = $('vlm-log');
 const dotYolo     = $('dot-yolo');
+const dotHuman    = $('dot-human');
 const dotVlm      = $('dot-vlm');
 const dotCam      = $('dot-cam');
 const livePill    = $('live-pill');
@@ -984,29 +1229,67 @@ const offCtx    = offscreen.getContext('2d');
    Solution:
      • canvas internal size  = container display size (px)
      • offscreen canvas size = native video resolution
-     • drawBoxes() computes the object-fit:cover transform and
+     • drawBoxesOn() computes the object-fit:cover transform and
        maps native coords → display coords before drawing.
 ───────────────────────────────────────────────────────── */
-function syncSize() {
-  /* Content box of the viewport — the same box both media elements fill at
-     100%/100%. Taken from #cam-wrap rather than the element itself so it is
+function sizeOverlay(layer) {
+  /* Content box of the viewport — the same box the media element fills at
+     100%/100%. Taken from the wrap rather than the element itself so it is
      still correct while a source is hidden mid-switch. (clientWidth excludes
      the 1px border, which getBoundingClientRect would wrongly include.) */
-  const dw = camWrap.clientWidth  || 640;
-  const dh = camWrap.clientHeight || 360;
+  const dw = layer.wrap.clientWidth  || 640;
+  const dh = layer.wrap.clientHeight || 360;
 
   // Canvas drawn at display resolution (1:1 with screen pixels)
-  if (canvas.width !== dw || canvas.height !== dh) {
-    canvas.width  = dw;
-    canvas.height = dh;
+  if (layer.canvas.width !== dw || layer.canvas.height !== dh) {
+    layer.canvas.width  = dw;
+    layer.canvas.height = dh;
   }
-  canvas.style.width  = dw + 'px';
-  canvas.style.height = dh + 'px';
+  layer.canvas.style.width  = dw + 'px';
+  layer.canvas.style.height = dh + 'px';
+}
 
-  // Offscreen at the active camera's native resolution (what YOLO gets)
+function syncSize() {
+  sizeOverlay(FIRE);
+  sizeOverlay(HUMAN);
+
+  // Offscreen at the active camera's native resolution (what both models get)
   const n = activeSource ? activeSource.nativeSize() : { w: 640, h: 480 };
   offscreen.width  = n.w;
   offscreen.height = n.h;
+}
+
+/* ─────────────────────────────────────────────────────────
+   MIRROR
+
+   The human pane shows the same picture as the fire pane. It cannot open its
+   own stream — the ESP32-CAM answers one connection at a time — so it repaints
+   the active source into a canvas every animation frame. The canvas carries
+   the source's NATIVE resolution and is laid out object-fit:cover, so it
+   scales and crops exactly as the <video>/<img> next to it does, which is what
+   lets one coverTransform() place boxes correctly in both panes.
+───────────────────────────────────────────────────────── */
+let mirrorRafId = null;
+
+function startMirror() {
+  if (mirrorRafId !== null) return;
+  const paint = () => {
+    mirrorRafId = requestAnimationFrame(paint);
+    if (!activeSource || !activeSource.isReady()) return;
+    const n = activeSource.nativeSize();
+    if (mirror.width !== n.w || mirror.height !== n.h) {
+      mirror.width  = n.w;
+      mirror.height = n.h;
+    }
+    activeSource.drawInto(mirrorCtx, mirror.width, mirror.height);
+  };
+  mirrorRafId = requestAnimationFrame(paint);
+}
+
+function stopMirror() {
+  if (mirrorRafId !== null) cancelAnimationFrame(mirrorRafId);
+  mirrorRafId = null;
+  mirrorCtx.clearRect(0, 0, mirror.width, mirror.height);
 }
 
 /* Compute object-fit:cover scale + offset for a given
@@ -1070,8 +1353,10 @@ async function startMonitoring() {
   activeSource.element.hidden = false;
   S.sourceHealthy = true;
   syncSize();
+  startMirror();
 
   placeholder.style.display = 'none';
+  humanPh.style.display = 'none';
   recDot.classList.add('visible');
   dotCam.className = 'svc-dot ok';
   camLive.className = 'cam-live on';
@@ -1088,12 +1373,14 @@ async function startMonitoring() {
 function stopMonitoring() {
   stopLoop();
   stopHealthPoll();
+  stopMirror();
   if (activeSource) { activeSource.stop(); activeSource = null; }
   video.hidden     = true;
   esp32View.hidden = true;
   S.sourceHealthy  = true;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  clearOverlays();
   showPlaceholder('CAMERA OFFLINE', 'Press Start Monitoring to activate the feed');
+  humanPh.style.display = 'flex';
   recDot.classList.remove('visible');
   dotCam.className = 'svc-dot idle';
   camLive.className = 'cam-live';
@@ -1192,13 +1479,18 @@ function captureBlob(quality = 0.75) {
 /* ═══════════════════════════════════════════════════════════
    API CALLS
 ═══════════════════════════════════════════════════════════ */
-async function callYolo(blob) {
+/* One upload, both detectors. The frontend proxy fans the frame out to the
+   fire and human services concurrently and returns:
+     { fire: {detections}, human: {detections, count}, timings }
+   Both sets of boxes therefore describe the SAME frame, which matters because
+   they are drawn over two views of it. A human-service failure comes back as
+   count:null rather than an error — it must not disturb the alarm path. */
+async function callDetect(blob) {
   const fd = new FormData();
   fd.append('file', blob, 'frame.jpg');
   const res = await fetch('/api/detect', { method: 'POST', body: fd });
-  if (!res.ok) throw new Error(`YOLO HTTP ${res.status}`);
-  const data = await res.json();
-  return (data.detections || []).filter(d => d.confidence >= MIN_CONF);
+  if (!res.ok) throw new Error(`Detect HTTP ${res.status}`);
+  return await res.json();
 }
 
 async function callVlm(blob) {
@@ -1225,6 +1517,11 @@ async function reportFire(vlm) {
         confidence: conf,
         description: vlm.description || '',
         detectedAt: new Date().toISOString(),
+        /* The smoothed count, not the raw one — this becomes the incident's
+           muster head-count in the evacuation app. Null when the human
+           detector has told us nothing, which alert-service reads as "no
+           information" rather than "nobody here". */
+        occupancy: S.occNow,
       }),
     });
   } catch (e) { console.warn('[alert] fire report failed:', e.message); }
@@ -1260,18 +1557,51 @@ function stopLoop() {
 async function runDetection() {
   if (!S.running) return;
 
+  /* DROP THE TICK IF ONE IS STILL IN FLIGHT. setInterval does not wait for an
+     async callback, so whenever inference is slower than DETECT_INTERVAL_MS —
+     routine on CPU-only hardware, where a 640px frame can take seconds — the
+     ticks queue up behind each other and latency grows without bound. The
+     models are single-worker and block on inference, so a backlog cannot be
+     worked off, only accumulated. Skipping is right rather than merely
+     convenient: the queued frames are stale by the time they would be scored,
+     and detection should track the newest frame, not the oldest unprocessed
+     one. Same guard the VLM path already uses via S.pendingVlm. */
+  if (S.pendingDetect) return;
+  S.pendingDetect = true;
+  try {
+    await detectOnce();
+  } finally {
+    S.pendingDetect = false;
+  }
+}
+
+async function detectOnce() {
   const blob = await captureBlob(0.75);
   if (!blob) return;
   S.fpsCount++;
 
-  /* ── YOLO ── */
+  /* The feed this frame came from. A slow round trip can outlive a Stop or a
+     camera switch, and its boxes belong to a picture no longer on screen —
+     the same staleness the VLM path guards against. */
+  const gen = S.gen;
+
+  /* ── Both detectors, one round trip ── */
   let dets = [];
   try {
-    dets = await callYolo(blob);
+    const payload = await callDetect(blob);
+    if (gen !== S.gen) return;
     dotYolo.className = 'svc-dot ok';
+    dets = (payload.fire?.detections || []).filter(d => d.confidence >= MIN_CONF);
+    S.fireMs  = payload.timings?.fireMs  ?? null;
+    S.humanMs = payload.timings?.humanMs ?? null;
+    applyHumanResult(payload.human);
   } catch (e) {
+    if (gen !== S.gen) return;   // stale — see above
     dotYolo.className = 'svc-dot err';
-    console.warn('[YOLO]', e.message);
+    /* The whole round trip failed, so we know nothing about people either —
+       drop the count rather than leave a stale number looking live. */
+    applyHumanResult(null);
+    console.warn('[detect]', e.message);
   }
 
   if (dets.length > 0) {
@@ -1279,7 +1609,10 @@ async function runDetection() {
     S.lastDetectionTime = Date.now();   // FIX 2: stamp the hit
     S.lastDetections    = dets;
     S.totalDetections  += dets.length;
-    drawBoxes(dets);
+    drawBoxesOn(FIRE, dets, {
+      color: FIRE_BOX_COLOR,
+      label: d => `${d.label} ${(d.confidence * 100).toFixed(0)}%`,
+    });
 
     /* ── VLM confirmation (non-blocking — fire and forget) ── */
     if (!S.pendingVlm) {
@@ -1341,6 +1674,55 @@ async function runDetection() {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   OCCUPANCY
+═══════════════════════════════════════════════════════════ */
+function median(xs) {
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  // Even-length windows average the middle pair; people are integers, so round.
+  return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
+}
+
+/* Fold one frame's human result into the rolling count.
+
+   A MISSING SAMPLE IS NOT ZERO PEOPLE. When the human service is down or the
+   round trip failed we drop the count to null and leave the median window
+   alone, so a brief outage cannot quietly drain the average toward "empty" —
+   which, during a fire, would tell the evacuation app everyone is out. */
+function applyHumanResult(human) {
+  const ok = !!human && human.count !== null && human.count !== undefined && !human.error;
+  S.humanHealthy = ok;
+  dotHuman.className = ok ? 'svc-dot ok' : 'svc-dot err';
+
+  if (!ok) {
+    S.occRaw = null;
+    S.occNow = null;
+    if (human && human.error) console.warn('[human]', human.error);
+    return;   // keep the last boxes; the pane dims rather than flickering empty
+  }
+
+  S.occRaw = human.count;
+  S.occSamples.push(human.count);
+  if (S.occSamples.length > OCC_WINDOW) S.occSamples.shift();
+  S.occNow = median(S.occSamples);
+  if (S.occPeak === null || S.occNow > S.occPeak) S.occPeak = S.occNow;
+
+  S.lastHumanDets = human.detections || [];
+  drawBoxesOn(HUMAN, S.lastHumanDets, {
+    color: HUMAN_BOX_COLOR,
+    // A numbered tag per person reads far better than "person 87%" repeated a
+    // dozen times, and it makes the count checkable against the picture.
+    label: (d, i) => String(i + 1),
+  });
+}
+
+function resetOccupancy() {
+  S.occRaw = S.occNow = S.occPeak = null;
+  S.occSamples = [];
+  S.lastHumanDets = [];
+}
+
+/* ═══════════════════════════════════════════════════════════
    ALARM AUDIO
 ═══════════════════════════════════════════════════════════ */
 function syncAudio() {
@@ -1361,11 +1743,20 @@ function syncAudio() {
 /* ═══════════════════════════════════════════════════════════
    FIX 1 — BOUNDING BOXES with proper coordinate mapping
 ═══════════════════════════════════════════════════════════ */
-function drawBoxes(dets) {
+function clearOverlays() {
+  for (const layer of [FIRE, HUMAN]) {
+    layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+  }
+}
+
+/* Both models return boxes in native frame pixels and both panes render that
+   frame with object-fit:cover, so one transform serves either overlay. */
+function drawBoxesOn(layer, dets, opts) {
+  const { ctx, canvas } = layer;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (!dets.length) return;
 
-  // Native video resolution (what YOLO processed)
+  // Native video resolution (what the detectors processed)
   const nativeW = offscreen.width;
   const nativeH = offscreen.height;
   // Display resolution (canvas internal size)
@@ -1375,8 +1766,8 @@ function drawBoxes(dets) {
   // Get the cover transform that maps native → display coords
   const { scale, offsetX, offsetY } = coverTransform(nativeW, nativeH, dispW, dispH);
 
-  for (const d of dets) {
-    // Map YOLO native-pixel coords → display-pixel coords
+  dets.forEach((d, i) => {
+    // Map native-pixel coords → display-pixel coords
     let [x1, y1, x2, y2] = d.box;
     x1 = x1 * scale + offsetX;
     y1 = y1 * scale + offsetY;
@@ -1388,14 +1779,14 @@ function drawBoxes(dets) {
     x2 = Math.min(dispW, x2); y2 = Math.min(dispH, y2);
 
     const w = x2 - x1, h = y2 - y1;
-    if (w < 2 || h < 2) continue; // skip degenerate boxes
+    if (w < 2 || h < 2) return; // skip degenerate boxes
 
-    const label = `${d.label} ${(d.confidence * 100).toFixed(0)}%`;
+    const label = opts.label(d, i);
 
-    // Box (calm danger red, soft glow)
-    ctx.shadowColor = 'rgba(229,52,42,.45)';
+    // Box (soft glow in the pane's colour)
+    ctx.shadowColor = opts.color;
     ctx.shadowBlur  = 6;
-    ctx.strokeStyle = '#E5342A';
+    ctx.strokeStyle = opts.color;
     ctx.lineWidth   = 2.5;
     ctx.strokeRect(x1, y1, w, h);
     ctx.shadowBlur  = 0;
@@ -1405,23 +1796,35 @@ function drawBoxes(dets) {
     const tw = ctx.measureText(label).width;
     const lx = x1;
     const ly = y1 > 26 ? y1 - 26 : y1 + h + 4;
-    ctx.fillStyle = '#E5342A';
+    ctx.fillStyle = opts.color;
     ctx.fillRect(lx, ly, tw + 12, 22);
 
     // Label text
     ctx.fillStyle = '#fff';
     ctx.fillText(label, lx + 6, ly + 15);
-  }
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════
    RENDER
 ═══════════════════════════════════════════════════════════ */
+function peopleWord(n) { return n === 1 ? '1 person' : `${n} people`; }
+
 function render() {
   // Status hero
   if (S.fireAlarm) {
     alarmBanner.className = 'active';
     alarmBanner.innerHTML = HERO_ACTIVE;
+    /* During an alarm the head-count is the operationally useful fact — who
+       still has to get out — so it replaces the generic subtitle. */
+    if (S.occNow !== null) {
+      const sub = alarmBanner.querySelector('.hero-sub');
+      if (sub) {
+        sub.textContent = S.occNow === 0
+          ? 'Confirmed by YOLO + VLM · no one detected in view'
+          : `Confirmed by YOLO + VLM · ${peopleWord(S.occNow)} still in view`;
+      }
+    }
   } else {
     alarmBanner.className = 'nominal';
     alarmBanner.innerHTML = HERO_NOMINAL;
@@ -1430,20 +1833,25 @@ function render() {
   syncAudio();
 
   // Stats
-  sDet.textContent = S.totalDetections;
-  sVlm.textContent = S.vlmCalls;
+  sDet.textContent    = S.totalDetections;
+  sPeople.textContent = S.occNow  === null ? '—' : S.occNow;
+  sPeak.textContent   = S.occPeak === null ? '—' : S.occPeak;
+  sVlm.textContent    = S.vlmCalls;
   // Alarm-state KPI chip
   sAlarm.className = S.fireAlarm ? 'stat-chip fire' : 'stat-chip clear';
   sAlarm.innerHTML = `<span class="sc-dot"></span>${S.fireAlarm ? 'Active' : 'Clear'}`;
 
   // Detection badges
   if (!S.lastDetections.length) {
-    detCont.innerHTML = `<span class="no-threat">${ICON_CHECK}No threats detected</span>`;
+    detCont.innerHTML = `<span class="no-threat">${ICON_CHECK}No threats</span>`;
   } else {
     detCont.innerHTML = S.lastDetections
       .map(d => `<span class="det-badge">${esc(d.label)} ${(d.confidence*100).toFixed(0)}%</span>`)
       .join('');
   }
+
+  renderOccupancy();
+  renderPanes();
 
   // VLM log
   if (S.log.length > MAX_LOG_ENTRIES) S.log = S.log.slice(-MAX_LOG_ENTRIES);
@@ -1454,6 +1862,44 @@ function render() {
       .map(e => `<div class="log-entry"><span class="log-ts">[${e.ts}]</span>${esc(e.text)}</div>`)
       .join('');
   }
+}
+
+/* People column of the Current Detections card. */
+function renderOccupancy() {
+  if (S.occNow === null) {
+    const why = !S.running          ? 'Start monitoring to count'
+              : !S.humanHealthy     ? 'Human detector unavailable'
+              :                       'Counting…';
+    occCont.innerHTML =
+      '<span class="occ-now none">—</span>'
+      + `<div class="occ-meta"><span>${esc(why)}</span></div>`;
+    return;
+  }
+  occCont.innerHTML =
+    `<span class="occ-now">${S.occNow}</span>`
+    + `<span class="occ-unit">${S.occNow === 1 ? 'person' : 'people'}</span>`
+    + '<div class="occ-meta">'
+    +   `<span>Peak <b>${S.occPeak}</b> · this frame <b>${S.occRaw ?? '—'}</b></span>`
+    +   `<span>Median of last ${S.occSamples.length}/${OCC_WINDOW} frames</span>`
+    + '</div>';
+}
+
+/* Pane headers and feet: a one-line verdict per model, plus its latency. */
+function renderPanes() {
+  const fireN = S.lastDetections.length;
+  fireCount.textContent = fireN ? `${fireN} box${fireN === 1 ? '' : 'es'}` : '';
+  fireSum.textContent = !S.running ? 'Standby'
+    : fireN ? S.lastDetections.map(d => `${d.label} ${(d.confidence*100).toFixed(0)}%`).join(' · ')
+    : 'No fire or smoke';
+  fireMsEl.textContent = S.fireMs === null ? '' : `· ${S.fireMs} ms`;
+
+  humanCount.textContent = S.occNow === null ? '' : peopleWord(S.occNow);
+  humanSum.textContent = !S.running ? 'Standby'
+    : !S.humanHealthy ? 'Detector unavailable'
+    : S.occNow === null ? 'Counting…'
+    : S.occNow === 0 ? 'No one in view'
+    : peopleWord(S.occNow) + ' in view';
+  humanMsEl.textContent = S.humanMs === null ? '' : `· ${S.humanMs} ms`;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1493,7 +1939,15 @@ function clearDetectionState() {
   S.reported       = false;
   S.pendingVlm     = false;
   S.lastDetections = [];
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  /* The count belongs to the camera that produced it just as much as the boxes
+     do — carrying it across a source switch would attribute one room's people
+     to another. Peak is a session statistic and survives, like totalDetections;
+     only Reset clears it. */
+  S.occRaw = S.occNow = null;
+  S.occSamples = [];
+  S.lastHumanDets = [];
+  S.fireMs = S.humanMs = null;
+  clearOverlays();
   render();
 }
 
@@ -1513,9 +1967,10 @@ btnReset.addEventListener('click', () => {
   S.lastDetectionTime= 0;
   S.reported         = false;
   S.log              = [];
+  resetOccupancy();
   alarmAudio.pause();
   alarmAudio.currentTime = 0;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  clearOverlays();
   render();
 });
 
