@@ -71,7 +71,12 @@ CREATE TABLE IF NOT EXISTS incidents (
     -- never "no fuel".
     fuel_type      TEXT,     -- gas_fire | liquid_fuel | solid_combustible
     fuel_confidence REAL,
-    fuel_source    TEXT      -- 'model' | 'unavailable', with the reason in fuel_type
+    fuel_source    TEXT,     -- 'model' | 'unavailable', with the reason in fuel_type
+    -- When the fuel was first identified. Kept separate from detected_at
+    -- because the gap between them IS the finding: the sensors need 14-22s to
+    -- catch up with the camera, and the incident report should show that
+    -- honestly rather than implying the system knew everything at once.
+    classified_at  TEXT
 );
 """
 
@@ -85,6 +90,7 @@ _ADDED_COLUMNS = (
     ("fuel_type", "TEXT"),
     ("fuel_confidence", "REAL"),
     ("fuel_source", "TEXT"),
+    ("classified_at", "TEXT"),
 )
 
 
@@ -222,11 +228,19 @@ async def set_classification(db, incident_id, fuel_type, fuel_confidence, source
     one from second 31, and a responder wants the current best answer, not the
     first one.
     """
+    # Stamped only on the FIRST real verdict. The dashboard asks every second
+    # and the answer can sharpen as the fire grows, but "when did we first know
+    # what was burning?" has one answer, and overwriting it would erase the
+    # very delay the report exists to show.
     await db.execute(
         """UPDATE incidents
-             SET fuel_type = ?, fuel_confidence = ?, fuel_source = ?
+             SET fuel_type = ?, fuel_confidence = ?, fuel_source = ?,
+                 classified_at = CASE
+                     WHEN ? = 'model' AND classified_at IS NULL THEN ?
+                     ELSE classified_at
+                 END
            WHERE id = ?""",
-        (fuel_type, fuel_confidence, source, incident_id),
+        (fuel_type, fuel_confidence, source, source, _utcnow(), incident_id),
     )
     await db.commit()
     return await get_incident(db, incident_id)

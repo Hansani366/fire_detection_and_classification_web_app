@@ -7,7 +7,7 @@ These dicts are the source of truth for the Dart `fromJson` in
 
 from datetime import datetime, timezone
 
-from fcm import FUEL_GUIDANCE, FUEL_LABEL
+import extinguishers as ext
 from zones_seed import HEALTH_STATIC, SITE_NAME
 
 
@@ -126,12 +126,16 @@ def classification_json(inc: dict) -> dict | None:
     source = inc.get("fuel_source")
     if not source:
         return None
+    fuel = inc.get("fuel_type")
     return {
-        "fuelType": inc.get("fuel_type"),
+        "fuelType": fuel,
         "confidence": inc.get("fuel_confidence"),
         "source": source,                      # model | unavailable
-        "guidance": FUEL_GUIDANCE.get(inc.get("fuel_type") or ""),
-        "label": FUEL_LABEL.get(inc.get("fuel_type") or ""),
+        # One sentence for a lock screen, the full table for a screen that has
+        # room. `response` is None when there is no fuel to respond to.
+        "guidance": ext.short_guidance(fuel),
+        "label": ext.label_for(fuel),
+        "response": ext.guidance_for(fuel),
         # Both models were trained on CFAST simulation and have never seen a
         # recorded fire. The app should show this next to the fuel type until
         # it has been validated against real recordings.
@@ -186,8 +190,99 @@ def history_json(inc: dict, zone_name: str, floor: str) -> dict:
         "resolution": inc.get("resolution") or "auto_cleared",
         "peakConfidencePct": round((inc.get("confidence") or 0) * 100),
         "peakOccupancy": inc.get("occupancy_peak"),
-        "cause": None,
+        # What was burning, kept with the record. Until now this was lost the
+        # moment the fire resolved, so nobody could afterwards answer the first
+        # question an investigation asks.
+        "fuelType": inc.get("fuel_type"),
+        "fuelLabel": ext.label_for(inc.get("fuel_type")) if inc.get("fuel_type") else None,
+        "fireClass": (ext.EXTINGUISHERS.get(inc.get("fuel_type") or "") or {}).get("fire_class"),
+        # `cause` was always null. The fuel is the closest thing the system can
+        # honestly say about cause, so it goes here rather than leaving the
+        # field permanently empty.
+        "cause": ext.label_for(inc.get("fuel_type")) if inc.get("fuel_type") else None,
         "sceneNotes": _scene_notes(inc),
+    }
+
+
+def _gap(a: str | None, b: str | None) -> int | None:
+    """Seconds between two stamps, or None if either is missing."""
+    if not a or not b:
+        return None
+    return max(0, round((_parse(b) - _parse(a)).total_seconds()))
+
+
+def report_json(inc: dict, zone: dict) -> dict:
+    """The record of one incident, for reading after it is over.
+
+    WHY THE TIMELINE IS THE POINT. A responder wants to know what burned. An
+    investigation wants to know when the system knew it. Those are different
+    questions, and the gaps between the stamps answer the second one: gas
+    reaches a sensor 14-22s after a camera sees the flame, so `detectedAt` and
+    `classifiedAt` are genuinely apart. Reporting one stamp would imply the
+    system knew everything at once, which it did not.
+
+    An escalated incident keeps BOTH stories: `createdAt` is when the gas
+    warning opened, `detectedAt` is when the flame was seen. The gap is how
+    much notice the sensors gave before anything was visible -- which is the
+    main thing the whole escalation design is for.
+    """
+    severity = inc.get("severity") or "fire"
+    escalated = severity == "fire" and (inc.get("created_at") != inc.get("detected_at"))
+
+    timeline = []
+    if escalated:
+        timeline.append({"at": inc.get("created_at"), "what": "Gas warning raised",
+                         "detail": "Sensor readings above normal, nothing visible on camera."})
+    timeline.append({
+        "at": inc.get("detected_at"),
+        "what": "Gas warning escalated to fire" if escalated else (
+            "Gas warning raised" if severity == "warning" else "Fire confirmed"),
+        "detail": inc.get("description") or "",
+    })
+    if inc.get("classified_at"):
+        timeline.append({
+            "at": inc["classified_at"],
+            "what": f"Fuel identified as {ext.label_for(inc.get('fuel_type')).lower()}",
+            "detail": ext.short_guidance(inc.get("fuel_type")),
+        })
+    if inc.get("resolved_at"):
+        timeline.append({"at": inc["resolved_at"], "what": "Incident closed",
+                         "detail": (inc.get("resolution") or "auto_cleared").replace("_", " ")})
+
+    return {
+        "id": inc["id"],
+        "severity": severity,
+        "escalatedFromWarning": escalated,
+        "zone": zone_json(zone),
+        "status": inc.get("status"),
+        "resolution": inc.get("resolution"),
+        "detection": {
+            "type": inc.get("type"),
+            "peakConfidence": inc.get("confidence"),
+            "description": inc.get("description") or "",
+        },
+        "classification": classification_json(inc),
+        "occupancy": {
+            "peak": inc.get("occupancy_peak"),
+            "atClose": inc.get("occupancy_current"),
+        },
+        "muster": muster_json(inc),
+        "timeline": timeline,
+        "durations": {
+            # How long the sensors saw it before anything was visible. The
+            # value of tier 1a, in seconds.
+            "warningToFireS": _gap(inc.get("created_at"), inc.get("detected_at")) if escalated else None,
+            # How long after the alarm the fuel was known.
+            "fireToClassifiedS": _gap(inc.get("detected_at"), inc.get("classified_at")),
+            "totalS": _gap(inc.get("created_at"), inc.get("resolved_at")),
+        },
+        "caveats": [
+            "The fuel type comes from models trained on CFAST simulation. Neither "
+            "has seen a recorded fire, so the fuel is a best estimate, not a finding.",
+            "Occupancy counts one camera's field of view. Anyone never in frame was "
+            "never counted, and anyone who walked out of shot counts as evacuated.",
+        ],
+        "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
     }
 
 

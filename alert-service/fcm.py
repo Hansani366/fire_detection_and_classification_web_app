@@ -10,6 +10,11 @@ instead of sent. This lets you test the whole pipeline before Firebase is wired.
 import logging
 import os
 
+# The response guidance lives in extinguishers.py, which the dashboard and the
+# incident record read from too -- one table, so the phone, the screen and the
+# report cannot give three different answers about the same fire.
+from extinguishers import label_for, short_guidance
+
 log = logging.getLogger("alert.fcm")
 
 CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS", "/secrets/firebase-sa.json")
@@ -23,22 +28,6 @@ FIRE_CHANNEL_ID = "fire_alerts"  # MUST match the Android notification channel t
 # trusted. The app must create this channel; until it does, Android falls back
 # to its default channel, which is still quieter than the fire one.
 WARNING_CHANNEL_ID = "gas_warnings"
-
-# What to do about each fuel, which is the actionable half of a classification.
-# Getting this wrong is worse than not knowing: water on burning liquid spreads
-# it, and putting out a gas flame while the gas still flows leaves it filling
-# the room.
-FUEL_GUIDANCE = {
-    "gas_fire": "Shut off the gas supply FIRST. Do not put the flame out while gas is still flowing.",
-    "liquid_fuel": "Do NOT use water — it will spread burning liquid. Use foam, CO2 or dry powder.",
-    "solid_combustible": "Water or foam is suitable for this fuel.",
-}
-
-FUEL_LABEL = {
-    "gas_fire": "Gas fire",
-    "liquid_fuel": "Liquid fuel fire",
-    "solid_combustible": "Solid combustibles",
-}
 
 _ready = False
 _messaging = None  # firebase_admin.messaging module, imported lazily
@@ -162,8 +151,8 @@ def _build_classification_message(token: str, ctx: dict):
     """Tier 3: the fire already alarmed; this says what is burning."""
     m = _messaging
     fuel = ctx.get("fuel_type") or ""
-    label = FUEL_LABEL.get(fuel, "Fire")
-    guidance = FUEL_GUIDANCE.get(fuel, "")
+    label = label_for(fuel)
+    guidance = short_guidance(fuel)
     return m.Message(
         token=token,
         notification=m.Notification(

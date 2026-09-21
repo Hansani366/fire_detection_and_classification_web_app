@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import db as store
+import extinguishers as ext
 import fcm
 import intake
 import serializers as ser
@@ -145,6 +146,22 @@ async def get_incident(incident_id: str):
     return ser.incident_json(inc, zone)
 
 
+@app.get("/api/incidents/{incident_id}/report")
+async def get_incident_report(incident_id: str):
+    """The record of one incident, for reading after it is over.
+
+    Separate from /api/incidents/{id}, which is the live view the phone polls
+    while a fire is burning. A report is read afterwards and answers different
+    questions -- when did the system know what, and how long did each step
+    take -- so it carries a timeline and the gaps between its stamps.
+    """
+    inc = await store.get_incident(_db(), incident_id)
+    if not inc:
+        raise HTTPException(404, "incident not found")
+    zone = await store.get_zone(_db(), inc["zone_id"])
+    return ser.report_json(inc, zone)
+
+
 @app.post("/api/incidents/{incident_id}/ack")
 async def ack_incident(incident_id: str):
     inc = await store.get_incident(_db(), incident_id)
@@ -152,6 +169,28 @@ async def ack_incident(incident_id: str):
         raise HTTPException(404, "incident not found")
     await store.bump_muster(_db(), incident_id)
     return {"ok": True}
+
+
+@app.get("/api/extinguishers")
+async def get_extinguishers():
+    """The full response table, for any screen with room to show it.
+
+    Served rather than duplicated so the dashboard, the phone and the incident
+    record give the same answer about the same fire. Static, so a client can
+    fetch it once at start-up.
+    """
+    return {
+        "fuels": ext.EXTINGUISHERS,
+        "universalCautions": ext.UNIVERSAL_CAUTIONS,
+        # Said once, here, rather than repeated on every card: the classifier
+        # has three fuel classes and real fires have more.
+        "modelLimits": [
+            "Cooking oil is class F and needs wet chemical. This model has no "
+            "class F and will report a chip-pan fire as liquid fuel.",
+            "The model cannot see whether electrical equipment is live, which "
+            "changes the correct extinguisher whatever is burning.",
+        ],
+    }
 
 
 @app.get("/api/history")

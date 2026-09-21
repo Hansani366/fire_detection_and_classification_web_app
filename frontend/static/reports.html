@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FireWatch — Incident Reports</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/css/tokens.css" />
+<link rel="stylesheet" href="/css/nav.css" />
+<style>
+/* ═══════════════════════════════════════════════════════════
+   TOP BAR  (kept in step with the other two pages)
+═══════════════════════════════════════════════════════════ */
+.topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+.brand-mark {
+  width: 42px; height: 42px; border-radius: 12px; flex: none;
+  background: linear-gradient(135deg, var(--brand-light), var(--brand));
+  display: grid; place-items: center; box-shadow: 0 4px 14px rgba(255,90,60,.3);
+}
+.brand-mark svg { width: 23px; height: 23px; }
+.fw-logo { font-family: var(--display); font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
+.fw-subtitle { font-size: 12.5px; color: var(--ink3); margin-top: 1px; }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+.fw-card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 16px; box-shadow: var(--shadow-card);
+  padding: 20px 22px; margin-bottom: 18px;
+}
+.card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.card-title {
+  font-family: var(--display); font-size: 15px; font-weight: 700;
+  display: flex; align-items: center; gap: 9px;
+}
+.card-title::before { content: ''; width: 3px; height: 15px; border-radius: 2px; background: var(--brand); }
+.card-sub { font-size: 12.5px; color: var(--ink3); line-height: 1.55; }
+.card-head-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+button.primary, button.ghost {
+  padding: 9px 16px; border-radius: 9px; font-family: var(--display);
+  font-size: 13px; font-weight: 700; cursor: pointer; border: 1px solid transparent;
+}
+button.primary { background: var(--ink-strong); color: #fff; }
+button.ghost { background: var(--card); color: var(--ink); border-color: var(--outline); }
+button.ghost:hover { background: var(--neutral-bg); }
+
+/* ═══════════════════════════════════════════════════════════
+   LIST
+═══════════════════════════════════════════════════════════ */
+.rep-row {
+  display: flex; align-items: center; gap: 13px; padding: 13px 14px;
+  border: 1px solid var(--line); border-radius: 11px; margin-bottom: 8px;
+  cursor: pointer; transition: border-color .15s, background .15s;
+}
+.rep-row:hover { border-color: var(--outline); background: var(--neutral-bg); }
+.rep-row.on { border-color: var(--brand); background: rgba(255,90,60,.05); }
+.rep-zone { font-family: var(--display); font-size: 13.5px; font-weight: 700; }
+.rep-when { font-size: 12px; color: var(--ink3); margin-top: 2px; }
+.rep-tags { margin-left: auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tag {
+  font-family: var(--display); font-size: 10.5px; font-weight: 700;
+  padding: 3px 8px; border-radius: 6px; white-space: nowrap;
+}
+.tag.fire { background: var(--danger-bg); color: var(--danger-ink); }
+.tag.smoke { background: var(--warn-bg); color: var(--warn-ink); }
+.tag.gas { background: var(--warn-bg); color: var(--warn-ink); }
+.tag.fuel { background: var(--neutral-bg); color: var(--ink2); }
+.tag.none { background: var(--neutral-bg); color: var(--ink3); }
+
+/* ═══════════════════════════════════════════════════════════
+   REPORT
+═══════════════════════════════════════════════════════════ */
+.rep-title { font-family: var(--display); font-size: 20px; font-weight: 800; }
+.rep-id { font-size: 12px; color: var(--ink3); font-family: ui-monospace, Menlo, monospace; }
+.rep-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0; }
+.rep-stat { border: 1px solid var(--line); border-radius: 11px; padding: 11px 13px; }
+.rep-stat .k {
+  font-family: var(--display); font-size: 10px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--ink3); margin-bottom: 4px;
+}
+.rep-stat .v { font-family: var(--display); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rep-stat .n { font-size: 11px; color: var(--ink3); margin-top: 2px; }
+
+.rep-sec { margin-top: 20px; }
+.rep-sec h3 {
+  font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--ink3); margin-bottom: 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+
+/* Timeline — the gaps between the stamps are the point, so the rail is
+   continuous and each step carries its own offset from the one before. */
+.tl { position: relative; padding-left: 22px; }
+.tl::before { content: ''; position: absolute; left: 5px; top: 5px; bottom: 5px; width: 2px; background: var(--line); }
+.tl-item { position: relative; padding-bottom: 15px; }
+.tl-item:last-child { padding-bottom: 0; }
+.tl-item::before {
+  content: ''; position: absolute; left: -22px; top: 4px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--card); border: 2px solid var(--outline);
+}
+.tl-item.hot::before { border-color: var(--danger); background: var(--danger); }
+.tl-what { font-family: var(--display); font-size: 13.5px; font-weight: 700; }
+.tl-at { font-size: 11.5px; color: var(--ink3); font-variant-numeric: tabular-nums; }
+.tl-detail { font-size: 12.5px; color: var(--ink2); line-height: 1.55; margin-top: 3px; }
+.tl-gap {
+  display: inline-block; font-family: var(--display); font-size: 10.5px; font-weight: 700;
+  background: var(--neutral-bg); color: var(--ink2);
+  padding: 2px 7px; border-radius: 5px; margin-left: 7px;
+}
+
+.resp { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 720px) { .resp { grid-template-columns: 1fr; } }
+.resp-col { border-radius: 10px; padding: 11px 13px; }
+.resp-col.use { background: var(--safe-bg); border: 1px solid var(--safe-line); }
+.resp-col.avoid { background: var(--danger-bg); border: 1px solid var(--danger); }
+.resp-col h4 { font-family: var(--display); font-size: 11px; font-weight: 700;
+               letter-spacing: .05em; text-transform: uppercase; margin-bottom: 7px; }
+.resp-col.use h4 { color: var(--safe-ink); }
+.resp-col.avoid h4 { color: var(--danger-ink); }
+.resp-col li { list-style: none; font-size: 12.5px; line-height: 1.5; margin-bottom: 6px; }
+.resp-col.use li { color: var(--safe-ink); }
+.resp-col.avoid li { color: var(--danger-ink); }
+.resp-col li b { font-family: var(--display); }
+.resp-col li span { display: block; opacity: .8; font-size: 11.5px; }
+
+.caveat {
+  font-size: 12px; line-height: 1.55; color: var(--ink2);
+  background: var(--neutral-bg); border-radius: 9px; padding: 10px 12px; margin-bottom: 8px;
+}
+.empty { text-align: center; padding: 44px 20px; color: var(--ink3); font-size: 13px; }
+
+/* ═══════════════════════════════════════════════════════════
+   PRINT
+   A report is a thing people print and file. No PDF library —
+   the browser's own "Print to PDF" is enough, provided the page
+   drops the furniture and does not break a section across pages.
+═══════════════════════════════════════════════════════════ */
+@media print {
+  .topbar, .page-nav, #list-card, .no-print { display: none !important; }
+  body { background: #fff; }
+  .wrapper { max-width: none; padding: 0; }
+  .fw-card { border: none; box-shadow: none; padding: 0; margin: 0; }
+  .rep-sec, .rep-stat, .tl-item, .resp-col { break-inside: avoid; }
+  .rep-sec h3 { break-after: avoid; }
+  a[href]::after { content: ''; }
+}
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <div class="topbar">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M12 2C13 5 11 6 11 8C11 9 12 10 12 10C12 10 14 9 14 7C16 9 17 11 17 14A5 5 0 1 1 7 14C7 12 8 11 9 10C8.5 12 10 13 10 13C10 13 9 9 12 5Z"/></svg>
+    </div>
+    <div>
+      <div class="fw-logo">FireWatch</div>
+      <div class="fw-subtitle">Incident reports — what happened, and when we knew</div>
+    </div>
+    <nav class="page-nav" aria-label="Pages">
+      <a href="/">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C13 5 11 6 11 8C11 9 12 10 12 10C12 10 14 9 14 7C16 9 17 11 17 14A5 5 0 1 1 7 14C7 12 8 11 9 10C8.5 12 10 13 10 13C10 13 9 9 12 5Z"/></svg>
+        Live Monitoring
+      </a>
+      <a href="/ablation">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h3V10H4v10Zm6.5 0h3V4h-3v16Zm6.5 0h3v-7h-3v7Z"/></svg>
+        Ablation Tests
+      </a>
+      <a href="/reports" aria-current="page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Zm0 2 4.5 4.5H14V4ZM8 13h8v2H8v-2Zm0 4h8v2H8v-2Zm0-8h4v2H8V9Z"/></svg>
+        Reports
+      </a>
+    </nav>
+    <div class="topbar-right"></div>
+  </div>
+
+  <div class="fw-card" id="list-card">
+    <div class="card-head">
+      <div class="card-title">Past incidents</div>
+      <div class="card-head-right card-sub" id="list-count"></div>
+    </div>
+    <div id="list"><div class="empty">Loading…</div></div>
+  </div>
+
+  <div id="report"></div>
+
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   INCIDENT REPORTS
+
+   Reads two endpoints: /api/history for the list, and
+   /api/incidents/{id}/report for one record. The report is
+   generated by alert-service, which owns the data — this page
+   only lays it out.
+
+   Classic script, same convention as the other pages.
+═══════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  const time = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString(undefined,
+      { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  };
+  const secs = (s) => (s === null || s === undefined) ? null
+    : (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`);
+
+  async function boot() {
+    let history = [];
+    try {
+      history = await (await fetch('/api/history', { cache: 'no-store' })).json();
+    } catch (e) {
+      $('list').innerHTML = `<div class="empty">Could not reach alert-service: ${esc(e.message)}</div>`;
+      return;
+    }
+    $('list-count').textContent = `${history.length} resolved`;
+    if (!history.length) {
+      $('list').innerHTML = `<div class="empty">No incidents yet.<br>
+        Run <code>POST /api/test-alert</code> to create one.</div>`;
+      return;
+    }
+
+    $('list').innerHTML = history.map((h) => {
+      // /api/history prefixes its ids with h_; the report endpoint wants the
+      // incident id underneath.
+      const id = h.id.replace(/^h_/, '');
+      const fuel = h.fuelLabel
+        ? `<span class="tag fuel">${esc(h.fuelLabel)} · class ${esc(h.fireClass)}</span>`
+        : `<span class="tag none">fuel not identified</span>`;
+      return `<div class="rep-row" data-id="${esc(id)}">
+        <div>
+          <div class="rep-zone">${esc(h.zoneName)}</div>
+          <div class="rep-when">${esc(h.whenLabel)} · ${h.durationMin} min · ${esc(h.floor)}</div>
+        </div>
+        <div class="rep-tags">
+          <span class="tag ${esc(h.type)}">${esc(h.type)}</span>
+          ${fuel}
+        </div>
+      </div>`;
+    }).join('');
+
+    document.querySelectorAll('.rep-row').forEach((row) => {
+      row.addEventListener('click', () => {
+        document.querySelectorAll('.rep-row').forEach((r) => r.classList.remove('on'));
+        row.classList.add('on');
+        show(row.dataset.id);
+      });
+    });
+    show(history[0].id.replace(/^h_/, ''));
+    document.querySelector('.rep-row').classList.add('on');
+  }
+
+  async function show(id) {
+    const host = $('report');
+    host.innerHTML = `<div class="fw-card"><div class="empty">Loading report…</div></div>`;
+    let r;
+    try {
+      r = await (await fetch(`/api/incidents/${id}/report`, { cache: 'no-store' })).json();
+    } catch (e) {
+      host.innerHTML = `<div class="fw-card"><div class="empty">${esc(e.message)}</div></div>`;
+      return;
+    }
+    if (r.detail) {
+      host.innerHTML = `<div class="fw-card"><div class="empty">${esc(r.detail)}</div></div>`;
+      return;
+    }
+
+    const c = r.classification;
+    const resp = c && c.response;
+    const d = r.durations;
+
+    // The gaps are the finding, so they get their own tiles rather than being
+    // buried in the timeline: how much notice the sensors gave before anything
+    // was visible, and how long after the alarm the fuel was known.
+    const stats = [
+      ['Zone', esc(r.zone.name), esc(r.zone.floor)],
+      ['Fuel', c && c.label ? esc(c.label) : 'Not identified',
+       resp ? `Class ${esc(resp.fire_class)}` : (c ? esc(c.source) : '')],
+      ['Peak occupancy', r.occupancy.peak ?? '—', 'people seen in frame'],
+      ['Warning → fire', secs(d.warningToFireS) ?? '—',
+       d.warningToFireS === null ? 'no prior warning' : 'notice from the sensors'],
+      ['Fire → fuel known', secs(d.fireToClassifiedS) ?? '—',
+       d.fireToClassifiedS === null ? 'never classified' : 'sensors catching up'],
+      ['Total', secs(d.totalS) ?? 'still open', esc(r.resolution || 'active')],
+    ].map(([k, v, n]) =>
+      `<div class="rep-stat"><div class="k">${k}</div><div class="v">${v}</div>
+       <div class="n">${n}</div></div>`).join('');
+
+    let prev = null;
+    const timeline = r.timeline.map((t) => {
+      const gap = prev ? Math.max(0, Math.round((new Date(t.at) - new Date(prev)) / 1000)) : null;
+      prev = t.at;
+      const hot = /fire|escalat/i.test(t.what);
+      return `<div class="tl-item ${hot ? 'hot' : ''}">
+        <div class="tl-what">${esc(t.what)}
+          ${gap ? `<span class="tl-gap">+${secs(gap)}</span>` : ''}</div>
+        <div class="tl-at">${time(t.at)}</div>
+        ${t.detail ? `<div class="tl-detail">${esc(t.detail)}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    host.innerHTML = `<div class="fw-card">
+      <div class="card-head">
+        <div>
+          <div class="rep-title">${esc(r.zone.name)} — ${c && c.label ? esc(c.label) : esc(r.detection.type)}</div>
+          <div class="rep-id">${esc(r.id)}${r.escalatedFromWarning ? ' · escalated from a gas warning' : ''}</div>
+        </div>
+        <div class="card-head-right no-print">
+          <button class="ghost" onclick="window.print()">Print / Save as PDF</button>
+        </div>
+      </div>
+
+      <div class="rep-grid">${stats}</div>
+
+      <div class="rep-sec">
+        <h3>Timeline</h3>
+        <div class="tl">${timeline}</div>
+      </div>
+
+      <div class="rep-sec">
+        <h3>What was detected</h3>
+        <div class="tl-detail">${esc(r.detection.description) || 'No description recorded.'}</div>
+        <div class="tl-at" style="margin-top:6px">
+          Peak confidence ${((r.detection.peakConfidence || 0) * 100).toFixed(0)}% ·
+          ${r.muster.present} of ${r.muster.total} accounted for (${esc(r.muster.source)})
+        </div>
+      </div>
+
+      ${resp ? `<div class="rep-sec">
+        <h3>Response — ${esc(resp.label)}, class ${esc(resp.fire_class)}</h3>
+        <div class="tl-detail" style="margin-bottom:10px"><b>${esc(resp.first_action)}</b><br>
+          ${esc(resp.first_action_why)}</div>
+        <div class="resp">
+          <div class="resp-col use"><h4>Use</h4><ul>${resp.use.map((u) =>
+            `<li><b>${esc(u.agent)}</b><span>${esc(u.note)}</span></li>`).join('')}</ul></div>
+          <div class="resp-col avoid"><h4>Do not use</h4><ul>${resp.do_not_use.map((x) =>
+            `<li><b>${esc(x.agent)}</b><span>${esc(x.why)}</span></li>`).join('')}</ul></div>
+        </div>
+        ${resp.caution ? `<div class="caveat" style="margin-top:10px"><b>Note:</b> ${esc(resp.caution)}</div>` : ''}
+        ${(resp.universal_cautions || []).map((u) =>
+          `<div class="caveat" style="margin-top:8px"><b>${esc(u.title)}:</b> ${esc(u.detail)}</div>`).join('')}
+      </div>` : ''}
+
+      <div class="rep-sec">
+        <h3>Limits of this report</h3>
+        ${r.caveats.map((x) => `<div class="caveat">${esc(x)}</div>`).join('')}
+      </div>
+
+      <div class="rep-sec">
+        <div class="tl-at">Generated ${time(r.generatedAt)} · FireWatch AI</div>
+      </div>
+    </div>`;
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

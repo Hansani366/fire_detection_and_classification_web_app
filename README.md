@@ -25,6 +25,7 @@ The dashboard has **two pages**, switched from the nav bar in the top bar:
 |---|---|
 | `/` | **Live Monitoring** — the running system: camera, detectors, alarm, sensors |
 | `/ablation` | **Ablation Tests** — the six sensing combinations, scored for the research paper |
+| `/reports` | **Reports** — what happened in each past incident, and when the system knew it |
 
 **Flow:** Camera (laptop webcam **or** ESP32-CAM) → one frame is scored by **both** detectors concurrently → fire/smoke (≥35% confidence) goes to the VLM for confirmation → 🚨 Alarm when **both agree** → Alert Service records the incident, **with the people count**, and pushes an FCM notification to the mobile app.
 
@@ -427,6 +428,57 @@ SID=$(curl -sk -X POST https://localhost/api/classify/sessions \
         -H 'content-type: application/json' -d '{"zoneId":"fabric-store"}' \
       | python3 -c 'import sys,json;print(json.load(sys.stdin)["session_id"])')
 curl -sk -X POST "https://localhost/api/classify/sessions/$SID/tick" -F file=@frame.jpg
+```
+
+---
+
+## What to fight it with
+
+Once the fusion model names the fuel, the system says what to use — and, more importantly, **what not
+to use**. The wrong extinguisher does not simply fail:
+
+| Fuel | Class | Never use | Why |
+|---|---|---|---|
+| Gas | C | — | **Isolate the supply first.** Putting the flame out while gas still flows lets it fill the room unburned. |
+| Liquid | B | **Water** | Burning liquid floats on water and travels with it. |
+| Solids | A | CO2 | Knocks the flames down without cooling, so it reignites. |
+
+Two limits are printed with every verdict, because the model has three fuel classes and real fires
+have more:
+
+- **Cooking oil is class F, not B.** It needs wet chemical. Foam or water on a deep-fat fire causes a
+  violent boil-over, and the model will call a chip-pan fire `liquid_fuel`.
+- **Live electrical equipment** changes the answer whatever is burning — CO2 or dry powder only. The
+  classifier cannot see whether anything is energised.
+
+The table lives in [alert-service/extinguishers.py](alert-service/extinguishers.py) and is served at
+`GET /api/extinguishers`. The dashboard, the phone push and the incident record all read it from
+there, so the three cannot drift into giving different answers about the same fire.
+
+---
+
+## Incident reports
+
+`https://localhost/reports` — one record per past incident, with a **Print / Save as PDF** button.
+No PDF library: the page simply prints well.
+
+The interesting part is the timeline and the gaps between its stamps:
+
+```
+Warning → fire      4s     how much notice the sensors gave
+Fire → fuel known   5s     how long the sensors took to catch up
+```
+
+Those two numbers are the escalation design, measured. Reporting a single timestamp would imply the
+system knew everything at once, which it did not — gas reaches a sensor 14–22 s after a camera sees
+the flame.
+
+An incident that escalated keeps both halves of its story: when the gas warning opened, and when the
+flame was seen. The fuel type is kept with the record too, so an investigation can still answer *"what
+was burning?"* long after the fire is out.
+
+```bash
+curl -sk https://localhost/api/incidents/<id>/report | python3 -m json.tool
 ```
 
 ---

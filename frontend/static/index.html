@@ -127,6 +127,68 @@
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
 
 /* ═══════════════════════════════════════════════════════════
+   EXTINGUISHER GUIDANCE
+
+   Only on screen when a fuel has been identified. Deliberately louder
+   than a normal card: the "do not use" line is the part that stops
+   someone making the fire worse, so it is the most visible thing here.
+═══════════════════════════════════════════════════════════ */
+.fuel-card {
+  background: var(--card); border: 1px solid var(--outline);
+  border-left: 4px solid var(--brand);
+  border-radius: 14px; padding: 16px 18px; margin-bottom: 18px;
+  box-shadow: var(--shadow-card);
+}
+.fuel-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.fuel-label { font-family: var(--display); font-size: 17px; font-weight: 800; }
+.fuel-class {
+  font-family: var(--display); font-size: 11px; font-weight: 700;
+  background: var(--neutral-bg); color: var(--ink2);
+  padding: 3px 8px; border-radius: 6px;
+}
+.fuel-conf { margin-left: auto; font-family: var(--display); font-size: 11.5px; color: var(--ink3); }
+.fuel-desc { font-size: 12.5px; color: var(--ink3); margin-bottom: 12px; }
+
+.fuel-first {
+  background: var(--warn-bg); border: 1px solid var(--warn);
+  border-radius: 10px; padding: 11px 13px; margin-bottom: 12px;
+}
+.fuel-first b { font-family: var(--display); font-size: 13.5px; color: var(--warn-ink); }
+.fuel-first p { font-size: 12.5px; color: var(--warn-ink); line-height: 1.55; margin-top: 4px; }
+
+.fuel-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 720px) { .fuel-cols { grid-template-columns: 1fr; } }
+.fuel-col { border-radius: 10px; padding: 11px 13px; }
+.fuel-col.use { background: var(--safe-bg); border: 1px solid var(--safe-line); }
+.fuel-col.avoid { background: var(--danger-bg); border: 1px solid var(--danger); }
+.fuel-col h4 {
+  font-family: var(--display); font-size: 11px; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase; margin-bottom: 7px;
+}
+.fuel-col.use h4 { color: var(--safe-ink); }
+.fuel-col.avoid h4 { color: var(--danger-ink); }
+.fuel-col li { list-style: none; font-size: 12.5px; line-height: 1.5; margin-bottom: 6px; }
+.fuel-col li:last-child { margin-bottom: 0; }
+.fuel-col.use li { color: var(--safe-ink); }
+.fuel-col.avoid li { color: var(--danger-ink); }
+.fuel-col li b { font-family: var(--display); font-weight: 700; }
+.fuel-col li span { display: block; opacity: .8; font-size: 11.5px; }
+
+.fuel-caution {
+  margin-top: 12px; font-size: 12px; line-height: 1.55;
+  color: var(--ink2); background: var(--neutral-bg);
+  border-radius: 9px; padding: 10px 12px;
+}
+.fuel-caution b { font-family: var(--display); }
+.fuel-unvalidated {
+  font-family: var(--display); font-size: 10px; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase;
+  background: var(--warn-bg); color: var(--warn-ink);
+  padding: 3px 7px; border-radius: 5px;
+}
+.fuel-pending { font-size: 13px; color: var(--ink3); }
+
+/* ═══════════════════════════════════════════════════════════
    MAIN GRID
 ═══════════════════════════════════════════════════════════ */
 /* Split view: the detector panes need the full page width to stay legible, so
@@ -798,6 +860,10 @@ button:disabled {
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h3V10H4v10Zm6.5 0h3V4h-3v16Zm6.5 0h3v-7h-3v7Z"/></svg>
         Ablation Tests
       </a>
+      <a href="/reports">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Zm0 2 4.5 4.5H14V4ZM8 13h8v2H8v-2Zm0 4h8v2H8v-2Zm0-8h4v2H8V9Z"/></svg>
+        Reports
+      </a>
     </nav>
     <div class="topbar-right">
       <div class="live-pill" id="live-pill"><span class="live-dot"></span><span id="live-text">STANDBY</span></div>
@@ -820,6 +886,13 @@ button:disabled {
   <audio id="alarm-audio" loop preload="none">
     <source src="/fire_alarm.mp3" type="audio/mpeg" />
   </audio>
+
+  <!-- ── Extinguisher guidance ──
+       Hidden until the fusion model names a fuel. Sits directly under the
+       alarm because the wrong extinguisher makes a fire worse: water spreads
+       burning liquid, and putting out a gas flame while the gas still flows
+       fills the room with an explosive cloud. -->
+  <div id="fuel-card" class="fuel-card" hidden></div>
 
   <!-- ── KPI row ── -->
   <div class="kpi-row">
@@ -1842,6 +1915,10 @@ function render() {
 
   renderOccupancy();
   renderPanes();
+  /* Driven from here rather than from the ladder's callback, so the card
+     appears and disappears with every other piece of alarm state instead of
+     only when a classification happens to arrive. */
+  renderFuelCard();
 
   // VLM log
   if (S.log.length > MAX_LOG_ENTRIES) S.log = S.log.slice(-MAX_LOG_ENTRIES);
@@ -2026,6 +2103,79 @@ fetch('/api/esp32/config')
    Its readings now also feed the escalation ladder, which is what lets a
    dangerous CO level raise the alarm with nothing visible on camera. The panel
    still polls from page load; the ladder only acts once monitoring starts. */
+/* ═══════════════════════════════════════════════════════════
+   EXTINGUISHER GUIDANCE
+
+   The table is fetched once from alert-service rather than kept here,
+   so the screen, the phone push and the incident record cannot end up
+   giving three different answers about the same fire.
+═══════════════════════════════════════════════════════════ */
+let FUEL_GUIDE = null;
+fetch('/api/extinguishers')
+  .then(r => r.json())
+  .then(g => { FUEL_GUIDE = g; renderFuelCard(); })
+  .catch(() => {});   /* the card simply stays hidden */
+
+function renderFuelCard() {
+  const card = $('fuel-card');
+  const cls  = S.classification;
+
+  /* No fire, or nothing asked yet — say nothing at all. */
+  if (!cls || !S.fireAlarm) { card.hidden = true; return; }
+
+  /* The classifier was asked but could not answer: the sensors were still
+     measuring clean air. Say WHY, because a blank space looks like a bug and
+     leaves the reader unsure whether to keep waiting. */
+  if (cls.source !== 'model' || !cls.fuelType) {
+    card.hidden = false;
+    card.innerHTML = `<div class="fuel-head"><span class="fuel-label">Identifying fuel…</span></div>
+      <div class="fuel-pending">${esc(cls.note || 'Waiting for the sensors to settle.')}</div>`;
+    return;
+  }
+
+  const g = FUEL_GUIDE && FUEL_GUIDE.fuels ? FUEL_GUIDE.fuels[cls.fuelType] : null;
+  if (!g) { card.hidden = true; return; }
+
+  const pct = cls.confidence == null ? '' :
+    `${(cls.confidence * 100).toFixed(0)}% confidence`;
+
+  card.hidden = false;
+  card.innerHTML = `
+    <div class="fuel-head">
+      <span class="fuel-label">Likely: ${esc(g.label)}</span>
+      <span class="fuel-class">Class ${esc(g.fire_class)}</span>
+      <span class="fuel-unvalidated" title="Trained on simulation, not on recorded fire">unvalidated</span>
+      <span class="fuel-conf">${esc(pct)}</span>
+    </div>
+    <div class="fuel-desc">${esc(g.class_description)}</div>
+
+    <div class="fuel-first">
+      <b>First: ${esc(g.first_action)}</b>
+      <p>${esc(g.first_action_why)}</p>
+    </div>
+
+    <div class="fuel-cols">
+      <div class="fuel-col use">
+        <h4>Use</h4>
+        <ul>${g.use.map(u =>
+          `<li><b>${esc(u.agent)}</b><span>${esc(u.note)}</span></li>`).join('')}</ul>
+      </div>
+      <div class="fuel-col avoid">
+        <h4>Do not use</h4>
+        <ul>${g.do_not_use.map(d =>
+          `<li><b>${esc(d.agent)}</b><span>${esc(d.why)}</span></li>`).join('')}</ul>
+      </div>
+    </div>
+
+    ${g.caution ? `<div class="fuel-caution"><b>Note:</b> ${esc(g.caution)}</div>` : ''}
+    ${/* These sit at the top level of the response, not inside the fuel entry,
+          because neither depends on which fuel the model picked — live
+          electrics and "only fight what you can walk away from" apply to all
+          three. Reading them from `g` silently rendered nothing. */''}
+    ${(FUEL_GUIDE.universalCautions || []).map(c =>
+      `<div class="fuel-caution"><b>${esc(c.title)}:</b> ${esc(c.detail)}</div>`).join('')}`;
+}
+
 Escalation.configure({
   zoneId: CAMERA_ZONE_ID,
   /* The classifier needs the frame the dashboard already has, so it borrows

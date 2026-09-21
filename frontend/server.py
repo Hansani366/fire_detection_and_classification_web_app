@@ -162,4 +162,8 @@ async def root():
 async def ablation():
     return FileResponse("static/ablation.html")
 
+@app.get("/reports")
+async def reports():
+    return FileResponse("static/reports.html")
+
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
