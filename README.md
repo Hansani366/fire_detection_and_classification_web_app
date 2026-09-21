@@ -13,9 +13,10 @@ Browser ──HTTPS──▶ nginx (443/80) ──▶ Frontend (3000) ──┬�
                                                          └─▶ Alert Service (8090) ──FCM──▶ 📱 Mobile App
                                     ├─▶ ESP32 Bridge (8021) ──HTTP──▶ 📷 ESP32-CAM (on your LAN)
                                     ├─▶ Sensor Bridge (8022) ◀──HTTP── 🌡️ ESP32 sensor nodes (push)
-                                    └─▶ Ablation Service (8023) ─┬─▶ Fire Detection YOLO (8000)
-                                                                 ├─▶ VLM Service (8019)
-                                                                 └─▶ Sensor Bridge (8022)
+                                    ├─▶ Fire Classification (8024) ─┬─▶ Fire Detection YOLO (8000)
+                                    │     owns both trained models   ├─▶ VLM Service (8019)
+                                    │                                └─▶ Sensor Bridge (8022)
+                                    └─▶ Ablation Service (8023) ─▶ Fire Classification (8024)
 ```
 
 The dashboard has **two pages**, switched from the nav bar in the top bar:
@@ -48,7 +49,8 @@ mid-demo-vision-system/
 ├── alert-service/     # Mobile alert backend — FCM push + zones/incidents/history (SQLite)
 ├── esp32-cam-service/     # ESP32-CAM bridge — relays the board's MJPEG stream same-origin
 ├── esp32-sensor-service/    # ESP32 sensor bridge — receives MQ-2 / MQ-7 / flame / DHT22 telemetry
-├── ablation-service/  # Six-combination ablation testing (trained fusion + sensor models)
+├── fire-classification-service/  # Owns sensor_model + fusion_model — what is burning
+├── ablation-service/  # Six-combination ablation testing (asks the classifier)
 ├── ablation-data/     # Your own recorded experiments (git-ignored; see its README)
 ├── nginx/             # HTTPS reverse proxy (self-signed cert)
 ├── .env               # Your API keys (never commit this)
@@ -308,8 +310,10 @@ from the model's `manifest.json` or from the dataset generator.
 
 ### The two models
 
-Both are vendored under `ablation-service/model/` from the sibling repo `fire_classification_model`
-(see `ablation-service/model/PROVENANCE.md` for the exact source and checksums).
+They live in **`fire-classification-service`** and nowhere else — the dashboard and this page both ask
+it for a verdict, so there is one copy of the weights and no way for the live system and the research
+page to disagree. Vendored from the sibling repo `fire_classification_model`; see
+`fire-classification-service/model/PROVENANCE.md` for the exact source and checksums.
 
 **`sensor_model.joblib` is required, not optional.** The fusion model reads no raw sensor values at
 all — features 92–95 of its 96 are the sensor model's four class probabilities:
@@ -320,8 +324,10 @@ sensors ─▶ sensor_model (XGBoost, 53 features) ─▶ 4 probabilities ─┐
 vision  ─▶ 17 raw channels + 72 temporal features ─────────────────┘   (MLP, 96 features)
 ```
 
-The service pins `scikit-learn==1.9.1`, `xgboost==2.0.3` and `pandas==3.0.6` — the exact versions that
-wrote the pickles — and **refuses to start** if the installed versions differ.
+`fire-classification-service` pins `scikit-learn==1.9.1`, `xgboost==2.0.3` and `pandas==3.0.6` — the
+exact versions that wrote the pickles — and **refuses to start** if the installed versions differ.
+`ablation-service` carries none of those libraries: it holds the rules and the metrics, and asks for
+the two trained arms over HTTP.
 
 ### Batch tab
 
@@ -385,6 +391,46 @@ curl -sk "https://localhost/api/ablation/runs/$RID/export.json"
 
 ---
 
+## Escalation — how the live system responds
+
+The dashboard no longer has a single alarm rule. The response now matches how strong the evidence is:
+
+| Tier | Trigger | Siren | What happens |
+|---|---|---|---|
+| **1a Warning** | sensors grade `warn`, sustained ~6 s | **no** | Gemini writes a warning **from the readings as text**, sent on a separate notification channel |
+| **1b Danger** | sensors grade `danger`, sustained | **yes** | alarms with nothing visible — a camera cannot see carbon monoxide |
+| **2 Fire** | YOLO + VLM agree | **yes** | opens the incident, reports what is visible |
+| **3 Classified** | sensors catch up | already on | **upgrades the same incident** with the fuel type and what to do about it |
+
+Four things about it are deliberate:
+
+- **A gas warning never sounds the fire alarm.** Gas sensors react to cooking, aerosols, solvents and
+  exhaust. A warning that sounded the alarm would teach people to ignore the alarm.
+- **Tier 3 upgrades tier 2, it does not replace it.** Gas reaches the sensor 14–22 s after a camera
+  sees the flame, so "all three agree" is nearly always the same fire arriving twice. One incident,
+  one muster, one timeline.
+- **A VLM outage no longer disables the alarm.** If Gemini is unreachable but YOLO and the sensors
+  both say fire, it alarms anyway and records that the VLM was unavailable.
+- **The fuel verdict says why when it cannot answer.** "Sensors still warming up" is information;
+  a blank field looks like a bug.
+
+The ladder lives in [frontend/static/js/escalation.js](frontend/static/js/escalation.js); the incident
+side is `alert-service`, which escalates a `warning` incident to `fire` in place.
+
+```bash
+# Tier 1a: readings in, plain-language warning out (no image)
+curl -sk -X POST https://localhost/api/warn -H 'content-type: application/json' \
+  -d '{"readings":"MQ-2 620 ppm (baseline 300), CO 45 ppm","zone":"fabric-store","level":"warn"}'
+
+# What is burning, on a live feed
+SID=$(curl -sk -X POST https://localhost/api/classify/sessions \
+        -H 'content-type: application/json' -d '{"zoneId":"fabric-store"}' \
+      | python3 -c 'import sys,json;print(json.load(sys.stdin)["session_id"])')
+curl -sk -X POST "https://localhost/api/classify/sessions/$SID/tick" -F file=@frame.jpg
+```
+
+---
+
 ## Health Checks
 
 The alert service is published on the host, so hit it directly. YOLO and VLM are
@@ -396,6 +442,7 @@ curl -s http://localhost:8022/health                                      # Sens
 docker compose exec human-detection-yolo-service curl -s http://localhost:8001/health
 docker compose exec esp32-cam-service curl -s http://localhost:8021/health    # ESP32 bridge
 curl -sk https://localhost/api/ablation/health                            # Ablation service
+curl -sk https://localhost/api/classify/health                            # Fire classification
 ```
 
 > `fire-detection-yolo-service` and `vlm-service` have **no `curl`** in their images, so

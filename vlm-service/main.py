@@ -5,6 +5,7 @@ import logging
 import time
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
@@ -148,9 +149,63 @@ def _clamp01(value) -> float:
         return 0.0
 
 
+# ── Sensor warning, tier 1a ──────────────────────────────────────────────────
+# NO IMAGE ON THIS PATH, ON PURPOSE. Tier 1a fires when gas is rising and the
+# camera sees nothing. Sending a photo of an apparently empty room and asking
+# "is this a fire?" gets "no" -- the useful question is what the NUMBERS mean.
+# Text-only is also several times cheaper and faster, which matters because
+# this path can trigger while nothing is actually wrong.
+SENSOR_WARNING_PROMPT = """You are a fire-safety assistant writing a short warning for a building
+occupant. You are given gas and temperature readings from one room. No fire is visible on camera.
+
+Readings:
+{readings}
+
+Write ONE short warning, 25 words or fewer, in plain language. Say what is rising and what the
+person should check. Give the most likely everyday cause if there is an obvious one (cooking,
+aerosol, solvent, vehicle exhaust, a heater).
+
+Do NOT say there is a fire — nothing is burning as far as anyone can see.
+Do NOT tell anyone to evacuate.
+Respond with the sentence only. No JSON, no markdown, no preamble."""
+
+
+class SensorWarningIn(BaseModel):
+    """One room's readings, already graded by esp32-sensor-service."""
+    readings: str                  # human-readable line, e.g. "MQ-2 620 ppm (baseline 300)…"
+    zone: str | None = None
+    level: str | None = None       # warn | danger, from the sensor service's own grading
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "model": "gemini-2.5-flash"}
+
+
+@app.post("/warn-from-sensors/")
+async def warn_from_sensors(body: SensorWarningIn):
+    """Plain-language warning from sensor numbers alone. Text in, text out.
+
+    Falls back to a plainly-worded template if Gemini is unreachable. A gas
+    warning that never arrives because an API key expired is worse than a
+    blunt one, so this path must not be able to fail.
+    """
+    started = time.perf_counter()
+    fallback = (f"Gas readings above normal in {body.zone or 'the monitored area'}. "
+                f"No fire seen on camera. Check for a leak, cooking or fumes.")
+    try:
+        prompt = SENSOR_WARNING_PROMPT.format(readings=body.readings)
+        response = llm.invoke([HumanMessage(content=prompt)])
+        text = _strip_fences(str(response.content)).strip().strip('"')
+        if not text:
+            raise ValueError("empty response")
+        logger.info("Sensor warning generated for zone=%s level=%s", body.zone, body.level)
+        return {"message": text, "generated": True,
+                "latency_ms": round((time.perf_counter() - started) * 1000)}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Sensor warning generation failed (%s) — using fallback.", exc)
+        return {"message": fallback, "generated": False,
+                "latency_ms": round((time.perf_counter() - started) * 1000)}
 
 
 @app.post("/describe-image/")

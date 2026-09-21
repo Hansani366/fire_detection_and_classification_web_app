@@ -1,8 +1,12 @@
 # Vendored model artifacts — do not edit
 
-These four files are **copies**. They are vendored rather than bind-mounted so that
-`docker compose build` works from this repository alone, and so that a published result can be
-traced to exact bytes.
+These four files are **copies**, and this service is their only home in the stack. Nothing else
+loads them: the dashboard and `ablation-service` both ask this service for a verdict instead, so
+there is one copy of the weights, one set of pinned library versions, and no way for two services
+to drift into disagreeing about the same fire.
+
+They are vendored rather than bind-mounted so that `docker compose build` works from this
+repository alone, and so that a published result can be traced to exact bytes.
 
 ## Source
 
@@ -13,7 +17,7 @@ Sibling repository, at the same level as this one:
     model/fusion_model.joblib
     model/sensor_model.joblib
     model/manifest.json
-    fire_classifier.py          -> vendored one level up, at ablation-service/
+    fire_classifier.py          -> vendored one level up, at fire-classification-service/
 ```
 
 | field | value |
@@ -31,7 +35,7 @@ ab58434114d3aa1deb649cfa2e3a2131a4915aa5929e249699b2721abfdaea06  sensor_model.j
 1b0ca5f33ae0b3e650068df23fc06f4ef721532a07fe6093f551fd8b8ab0b1e0  manifest.json
 ```
 
-Verify with `shasum -a 256 model/*.joblib model/manifest.json`. `/api/ablation/health` reports the
+Verify with `shasum -a 256 model/*.joblib model/manifest.json`. `/api/classify/health` reports the
 live checksums so a running container can be matched against a results export.
 
 ## What the two models are, and why both are needed

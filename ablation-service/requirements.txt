@@ -1,16 +1,14 @@
-# Pinned EXACTLY to model/manifest.json -> library_versions. The fusion bundle
-# carries `_sklearn_version` inside the pickle, so a minor mismatch is an
-# InconsistentVersionWarning at best and a failed unpickle at worst. main.py
-# asserts these at startup rather than letting a drifted image serve wrong
-# numbers into a research paper.
-scikit-learn==1.9.1
-xgboost==2.0.3
+# NO MODEL LIBRARIES HERE. The trained models moved to
+# fire-classification-service, which owns them and pins the exact
+# scikit-learn / xgboost / pandas that wrote the pickles. This service only
+# applies rules and computes metrics, so it needs neither sklearn nor xgboost
+# nor joblib -- and keeping them would invite someone to load a second copy of
+# the weights here.
+#
+# pandas stays pinned to the model's version anyway: the rolling-window
+# semantics used by the rules and the warm-up profile should match the ones the
+# model was fitted with, so the two sides describe the same 25-second window.
 pandas==3.0.6
-
-joblib
-# numpy>=2 is what sklearn 1.9 / pandas 3.0 want. The two YOLO services pin
-# numpy<2 for the OpenCV/torch ABI -- which is exactly why this service has its
-# own image instead of being folded into one of theirs.
 numpy>=2
 
 fastapi
@@ -19,5 +17,5 @@ python-multipart
 httpx
 
 # Reads recorded frames so flame flicker can be measured from them. Only the
-# recordings path needs it -- replay and live never open an image here.
+# recordings path needs it.
 pillow

@@ -34,6 +34,7 @@ from datetime import datetime, timezone
 import httpx
 import pandas as pd
 
+import classifier_client as CC
 import combos
 import constants as K
 import vision
@@ -152,8 +153,9 @@ async def _fetch_sensors(client: httpx.AsyncClient, url: str,
 
 async def tick(session: LiveSession, image: bytes, frame_w: int, frame_h: int,
                flicker_hz: float, yolo_url: str, vlm_url: str,
-               sensor_url: str, clf, manifest: dict) -> dict:
+               sensor_url: str, client) -> dict:
     """Score one 1 Hz window through all six combinations."""
+    manifest = client.manifest
     if session.full:
         raise ValueError(
             f"session reached its {K.LIVE_MAX_ROWS}-window cap "
@@ -164,12 +166,12 @@ async def tick(session: LiveSession, image: bytes, frame_w: int, frame_h: int,
     t = session.elapsed
     timings: dict[str, int] = {}
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient() as http:
         # YOLO and the sensor read are independent, so they overlap.
         started = time.perf_counter()
-        yolo_task = client.post(yolo_url, files={"file": ("frame.jpg", image, "image/jpeg")},
+        yolo_task = http.post(yolo_url, files={"file": ("frame.jpg", image, "image/jpeg")},
                                 timeout=10.0)
-        sensor_task = (_fetch_sensors(client, sensor_url, session.device_id)
+        sensor_task = (_fetch_sensors(http, sensor_url, session.device_id)
                        if session.sensor_source == "node"
                        else asyncio.sleep(0, result=None))
         yolo_resp, sensor_reading = await asyncio.gather(
@@ -191,7 +193,7 @@ async def tick(session: LiveSession, image: bytes, frame_w: int, frame_h: int,
         if ungated_due:
             started = time.perf_counter()
             try:
-                resp = await client.post(
+                resp = await http.post(
                     vlm_url, files={"file": ("frame.jpg", image, "image/jpeg")},
                     timeout=60.0)
                 resp.raise_for_status()
@@ -264,10 +266,18 @@ async def tick(session: LiveSession, image: bytes, frame_w: int, frame_h: int,
     session.window_idx += 1
 
     # ── score the whole session ───────────────────────────────────────────
+    # The trained arms come from fire-classification-service; the four rules
+    # are computed here. Sending the whole buffer each tick is deliberate: the
+    # model's running maxima and 25-window persistence reach back to the first
+    # window, so a trailing slice would give a different answer.
     started = time.perf_counter()
     frame = pd.DataFrame(session.rows)
-    features = clf.build_features(frame)
-    scored = combos.score_all(features, manifest, clf)
+    proba = await client.score(frame)
+    timings["classify_ms"] = round((time.perf_counter() - started) * 1000)
+
+    started = time.perf_counter()
+    features = CC.sorted_like_service(frame)
+    scored = combos.score_all(features, manifest, client.classes, proba)
     timings["score_ms"] = round((time.perf_counter() - started) * 1000)
 
     verdicts = {}

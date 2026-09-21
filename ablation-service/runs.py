@@ -6,14 +6,12 @@ request at 30s by default, and a run over real recordings spends most of its
 time waiting on Gemini -- minutes, not seconds. So a run is submitted, polled,
 and then read, and nothing has to be held open.
 
-WHY A THREAD AND NOT A PROCESS POOL. The worry was that a long pandas feature
-build would stall the 1 Hz live tick inside a single-worker service. Measured
-on the full 96-experiment test split: build_features 0.6s, score 0.3s,
-evaluate 0.3s. That is a ~1.2s stall in the worst case, only if a batch run and
-a live session overlap, so the complexity of shipping models across a process
-boundary buys very little. asyncio.to_thread keeps the event loop responsive
-during the I/O-bound part, which for recordings is nearly all of it. Revisit
-this if recordings ever get big enough to matter.
+WHY A THREAD AND NOT A PROCESS POOL. The heavy part -- building 96 features
+and running two models -- now happens in fire-classification-service, so what
+is left here is rules and arithmetic: a few hundred milliseconds on the full
+96-experiment split. asyncio.to_thread keeps the event loop responsive while it
+runs, which matters because the model call before it is I/O and a live session
+may be ticking alongside.
 
 WHAT AN EXPORT MUST CONTAIN TO BE CITABLE. Not just the numbers: the model's
 run_id, the checksums of the two joblibs, the checksum of the input data, the
@@ -35,6 +33,7 @@ from pathlib import Path
 
 import pandas as pd
 
+import classifier_client as CC
 import combos
 import constants as K
 import metrics as M
@@ -118,31 +117,36 @@ def _replay_datasets():
 
 
 def _score_frame(frame: pd.DataFrame, dataset: dict, combo_ids: list[int],
-                 clf, manifest: dict, ground_truth: str) -> dict:
-    """Features -> six combinations -> metrics. Pure CPU; runs off the loop."""
-    timings = {}
-    t0 = time.perf_counter()
-    features = clf.build_features(frame)
-    timings["build_features_ms"] = round((time.perf_counter() - t0) * 1000)
+                 client, proba: dict, ground_truth: str, timings: dict) -> dict:
+    """Six combinations -> metrics, over raw rows plus the remote probabilities.
+
+    Pure CPU, so it runs off the event loop. The model call already happened:
+    everything here is rules, rolling statistics and arithmetic.
+    """
+    manifest = client.manifest
+    # Reproduce the ordering the classification service scored in, or every
+    # metric would be computed against misaligned probabilities.
+    features = CC.sorted_like_service(frame)
 
     t0 = time.perf_counter()
-    scored = combos.score_all(features, manifest, clf, combo_ids)
+    scored = combos.score_all(features, manifest, client.classes, proba, combo_ids)
     timings["score_ms"] = round((time.perf_counter() - t0) * 1000)
 
     truth = M.build_truth(frame, features, ground_truth)
     t0 = time.perf_counter()
-    result = M.evaluate(scored, truth, clf, manifest, dataset["synthetic"])
+    result = M.evaluate(scored, truth, client.classes, manifest, dataset["synthetic"])
     timings["evaluate_ms"] = round((time.perf_counter() - t0) * 1000)
 
     result["timings"] = timings
     result["dataset"] = dataset
-    result["_windows"] = _window_table(frame, features, truth, scored, clf)
+    result["_windows"] = _window_table(features, truth, scored, client.classes)
     return result
 
 
-def _run_sync(dataset_id: str, combo_ids: list[int], clf, manifest: dict,
-              experiment_ids: list[str] | None, ground_truth: str = "strict") -> dict:
-    """The whole evaluation, start to finish. Runs off the event loop."""
+async def _run_replay(dataset_id: str, combo_ids: list[int], client,
+                      experiment_ids: list[str] | None, ground_truth: str,
+                      run: dict) -> dict:
+    """Replay one vendored split through all six combinations."""
     spec = REPLAY_SETS[dataset_id]
     path = DATA_DIR / spec["file"]
     frame = pd.read_csv(path)
@@ -152,18 +156,19 @@ def _run_sync(dataset_id: str, combo_ids: list[int], clf, manifest: dict,
             raise ValueError("no experiments matched")
 
     timings = {}
+    run["progress"] = {"stage": "scoring the trained arms", "done": 0, "total": 1}
     t0 = time.perf_counter()
-    features = clf.build_features(frame)
-    timings["build_features_ms"] = round((time.perf_counter() - t0) * 1000)
+    proba = await client.score(frame)
+    timings["classify_ms"] = round((time.perf_counter() - t0) * 1000)
 
-    t0 = time.perf_counter()
-    scored = combos.score_all(features, manifest, clf, combo_ids)
-    timings["score_ms"] = round((time.perf_counter() - t0) * 1000)
-
-    truth = M.build_truth(frame, features, ground_truth)
-    t0 = time.perf_counter()
-    result = M.evaluate(scored, truth, clf, manifest, spec["synthetic"])
-    timings["evaluate_ms"] = round((time.perf_counter() - t0) * 1000)
+    dataset = {
+        "id": dataset_id, "label": spec["label"], "kind": "replay",
+        "synthetic": spec["synthetic"], "note": spec["note"],
+        "sha256": _sha256_file(path),
+    }
+    run["progress"] = {"stage": "computing metrics", "done": 1, "total": 1}
+    result = await asyncio.to_thread(
+        _score_frame, frame, dataset, combo_ids, client, proba, ground_truth, timings)
 
     # The OOD split's label is "unknown", a class the model was never trained
     # to emit, so a fuel table there would score every prediction wrong for a
@@ -174,19 +179,10 @@ def _run_sync(dataset_id: str, combo_ids: list[int], clf, manifest: dict,
             "Not scored: these fuels have no trained class. The binary table "
             "below is the meaningful one."
         )
-
-    result["timings"] = timings
-    result["dataset"] = {
-        "id": dataset_id, "label": spec["label"], "kind": "replay",
-        "synthetic": spec["synthetic"], "note": spec["note"],
-        "sha256": _sha256_file(path),
-    }
-    # Per-window rows, kept so the CSV export can be written without rerunning.
-    result["_windows"] = _window_table(frame, features, truth, scored, clf)
     return result
 
 
-def _window_table(frame, features, truth, scored, clf) -> list[dict]:
+def _window_table(features, truth, scored, classes) -> list[dict]:
     rows = {
         "experiment_id": truth["experiment_id"].to_numpy(),
         "window_idx": truth["window_idx"].to_numpy(),
@@ -203,7 +199,7 @@ def _window_table(frame, features, truth, scored, clf) -> list[dict]:
     return pd.DataFrame(rows).to_dict("records")
 
 
-async def _run_recordings(dataset_id: str, combo_ids: list[int], clf, manifest: dict,
+async def _run_recordings(dataset_id: str, combo_ids: list[int], client,
                           ground_truth: str, run: dict, yolo_url: str,
                           vlm_url: str) -> dict:
     """Score one recording folder, or every one of them with `rec/*`.
@@ -228,7 +224,7 @@ async def _run_recordings(dataset_id: str, combo_ids: list[int], clf, manifest: 
             run["progress"] = {"stage": f"{folder.name}: {done}/{total}s",
                                "done": i, "total": len(folders)}
 
-        frame, meta = await recordings.build_frame(folder, clf, yolo_url, vlm_url,
+        frame, meta = await recordings.build_frame(folder, yolo_url, vlm_url,
                                                    progress=report)
         frames.append(frame)
         metas.append({"experiment_id": folder.name, **{
@@ -242,13 +238,20 @@ async def _run_recordings(dataset_id: str, combo_ids: list[int], clf, manifest: 
         "note": "Your own recordings, scored through the real detectors.",
         "experiments": metas,
     }
+    timings = {}
+    run["progress"] = {"stage": "scoring the trained arms",
+                       "done": len(folders), "total": len(folders)}
+    t0 = time.perf_counter()
+    proba = await client.score(combined)
+    timings["classify_ms"] = round((time.perf_counter() - t0) * 1000)
+
     run["progress"] = {"stage": "computing metrics", "done": len(folders),
                        "total": len(folders)}
     return await asyncio.to_thread(_score_frame, combined, dataset, combo_ids,
-                                   clf, manifest, ground_truth)
+                                   client, proba, ground_truth, timings)
 
 
-async def submit(dataset_id: str, combo_ids: list[int], clf, manifest: dict,
+async def submit(dataset_id: str, combo_ids: list[int], client,
                  experiment_ids: list[str] | None = None,
                  ground_truth: str = "strict",
                  yolo_url: str = "", vlm_url: str = "") -> str:
@@ -268,12 +271,11 @@ async def submit(dataset_id: str, combo_ids: list[int], clf, manifest: dict,
         run["status"] = "running"
         try:
             if is_recording:
-                result = await _run_recordings(dataset_id, combo_ids, clf, manifest,
+                result = await _run_recordings(dataset_id, combo_ids, client,
                                                ground_truth, run, yolo_url, vlm_url)
             else:
-                result = await asyncio.to_thread(
-                    _run_sync, dataset_id, combo_ids, clf, manifest, experiment_ids,
-                    ground_truth)
+                result = await _run_replay(dataset_id, combo_ids, client,
+                                           experiment_ids, ground_truth, run)
             RUNS[run_id]["result"] = result
             RUNS[run_id]["status"] = "done"
         except Exception as exc:                       # noqa: BLE001

@@ -1,11 +1,10 @@
 FROM python:3.11-slim
 
-# libgomp1 is XGBoost's OpenMP runtime -- without it `import xgboost` fails on
-# slim. curl so `docker compose exec ablation-service curl .../health` works,
-# the way esp32-sensor-service and esp32-cam-service do.
+# curl so `docker compose exec ablation-service curl .../health` works, the way
+# esp32-sensor-service and esp32-cam-service do. No libgomp1: XGBoost lives in
+# fire-classification-service now, not here.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -13,9 +12,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Models before code: they change far less often, so the layer stays cached
-# across edits to main.py.
-COPY model/ model/
 COPY data/ data/
 COPY *.py ./
 

@@ -123,7 +123,7 @@ def list_recordings(root: Path = DATA_ROOT) -> list[dict]:
     return out
 
 
-async def build_frame(folder: Path, clf, yolo_url: str, vlm_url: str,
+async def build_frame(folder: Path, yolo_url: str, vlm_url: str,
                       progress=None) -> tuple[pd.DataFrame, dict]:
     """One recording -> a DataFrame of 1 Hz rows ready for build_features()."""
     from PIL import Image

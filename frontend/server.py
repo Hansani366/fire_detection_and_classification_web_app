@@ -17,8 +17,12 @@ from fastapi.middleware.cors import CORSMiddleware
 FIRE_YOLO_URL  = os.getenv("FIRE_YOLO_URL",  "http://fire-detection-yolo-service:8000/detect")
 HUMAN_YOLO_URL = os.getenv("HUMAN_YOLO_URL", "http://human-detection-yolo-service:8001/detect")
 GEMINI_URL     = os.getenv("GEMINI_URL",     "http://vlm-service:8019/describe-image/")
+VLM_WARN_URL   = os.getenv("VLM_WARN_URL",   "http://vlm-service:8019/warn-from-sensors/")
 YOLO_TIMEOUT = float(os.getenv("YOLO_TIMEOUT",   "10"))   # YOLO is fast
 VLM_TIMEOUT  = float(os.getenv("VLM_TIMEOUT",    "60"))   # Gemini can be slow
+# Text-only, so far quicker than the vision call — and the caller falls back to
+# a fixed sentence, so waiting a minute for prose would be the wrong trade.
+WARN_TIMEOUT = float(os.getenv("WARN_TIMEOUT",   "15"))
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("frontend")
@@ -117,6 +121,25 @@ async def proxy_describe(file: UploadFile = File(...)):
                 GEMINI_URL,
                 files={"file": ("frame.jpg", data, "image/jpeg")},
             )
+        return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="VLM service timed out")
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail=f"VLM service unreachable: {exc}")
+
+
+@app.post("/api/warn")
+async def proxy_warn(body: dict):
+    """Tier 1a: turn sensor readings into a plain-language warning.
+
+    JSON in, JSON out — no image. Proxied here rather than called directly so
+    the browser stays same-origin, exactly like /api/describe. A short timeout
+    because this is a text-only call and the caller has a fallback: a warning
+    that arrives late is worse than a blunt one that arrives now.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=WARN_TIMEOUT) as client:
+            resp = await client.post(VLM_WARN_URL, json=body)
         return JSONResponse(content=resp.json(), status_code=resp.status_code)
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="VLM service timed out")

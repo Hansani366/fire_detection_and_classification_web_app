@@ -15,6 +15,31 @@ log = logging.getLogger("alert.fcm")
 CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS", "/secrets/firebase-sa.json")
 FIRE_CHANNEL_ID = "fire_alerts"  # MUST match the Android notification channel the app creates
 
+# A SEPARATE CHANNEL, ON PURPOSE. A gas warning is not a fire: nothing is
+# visibly burning and nobody should evacuate yet. If it arrived on
+# FIRE_CHANNEL_ID it would play the fire sound at full volume, and after two or
+# three cooking-smoke false alarms people mute the channel -- which silences
+# the real fire alert too. A quieter channel is what keeps the loud one
+# trusted. The app must create this channel; until it does, Android falls back
+# to its default channel, which is still quieter than the fire one.
+WARNING_CHANNEL_ID = "gas_warnings"
+
+# What to do about each fuel, which is the actionable half of a classification.
+# Getting this wrong is worse than not knowing: water on burning liquid spreads
+# it, and putting out a gas flame while the gas still flows leaves it filling
+# the room.
+FUEL_GUIDANCE = {
+    "gas_fire": "Shut off the gas supply FIRST. Do not put the flame out while gas is still flowing.",
+    "liquid_fuel": "Do NOT use water — it will spread burning liquid. Use foam, CO2 or dry powder.",
+    "solid_combustible": "Water or foam is suitable for this fuel.",
+}
+
+FUEL_LABEL = {
+    "gas_fire": "Gas fire",
+    "liquid_fuel": "Liquid fuel fire",
+    "solid_combustible": "Solid combustibles",
+}
+
 _ready = False
 _messaging = None  # firebase_admin.messaging module, imported lazily
 
@@ -98,25 +123,94 @@ def _build_message(token: str, ctx: dict):
     )
 
 
-def send_fire_push(tokens: list[str], ctx: dict) -> list[str]:
-    """
-    Send one fire alert to every token. Returns the list of dead tokens
-    (unregistered / sender-mismatch) so the caller can prune them.
-    """
+def _build_warning_message(token: str, ctx: dict):
+    """Tier 1a: gas is rising and nothing is visible. Informational, not an alarm."""
+    m = _messaging
+    return m.Message(
+        token=token,
+        notification=m.Notification(
+            title=f"⚠️ Gas levels rising — {ctx['zone_name']}, {ctx['floor']}",
+            body=ctx.get("description") or "Sensor readings are above normal. No fire seen yet.",
+        ),
+        data={
+            "type": "gas_warning",
+            "route": "/incident",
+            "severity": "warning",
+            "incidentId": str(ctx["id"]),
+            "zoneId": str(ctx["zone_id"]),
+            "zoneName": str(ctx["zone_name"]),
+            "floor": str(ctx["floor"]),
+            "detectorId": str(ctx.get("detector_id", "")),
+            "description": str(ctx.get("description") or ""),
+            "detectedAt": str(ctx["detected_at"]),
+            "sensors": str(ctx.get("sensor_summary") or ""),
+        },
+        android=m.AndroidConfig(
+            # Deliberately NOT high/max and not the fire channel: this must not
+            # look or sound like an evacuation.
+            priority="normal",
+            notification=m.AndroidNotification(
+                channel_id=WARNING_CHANNEL_ID,
+                priority="default",
+                visibility="public",
+            ),
+        ),
+    )
+
+
+def _build_classification_message(token: str, ctx: dict):
+    """Tier 3: the fire already alarmed; this says what is burning."""
+    m = _messaging
+    fuel = ctx.get("fuel_type") or ""
+    label = FUEL_LABEL.get(fuel, "Fire")
+    guidance = FUEL_GUIDANCE.get(fuel, "")
+    return m.Message(
+        token=token,
+        notification=m.Notification(
+            title=f"{label} — {ctx['zone_name']}, {ctx['floor']}",
+            body=guidance or "Fuel type identified. Tap for details.",
+        ),
+        data={
+            "type": "fire_classified",
+            "route": "/incident",
+            "severity": "fire",
+            "incidentId": str(ctx["id"]),
+            "zoneId": str(ctx["zone_id"]),
+            "zoneName": str(ctx["zone_name"]),
+            "floor": str(ctx["floor"]),
+            "fuelType": str(fuel),
+            "fuelConfidence": str(ctx.get("fuel_confidence") or ""),
+            "fuelGuidance": guidance,
+            "occupancy": "" if ctx.get("occupancy") is None else str(ctx["occupancy"]),
+        },
+        android=m.AndroidConfig(
+            priority="high",
+            notification=m.AndroidNotification(
+                channel_id=FIRE_CHANNEL_ID,
+                sound="default",
+                priority="max",
+                visibility="public",
+            ),
+        ),
+    )
+
+
+def _send(tokens: list[str], ctx: dict, builder, what: str) -> list[str]:
+    """Shared send path. Returns dead tokens so the caller can prune them."""
     if not tokens:
         log.info("No registered devices — nothing to push for incident %s.", ctx.get("id"))
         return []
     if not _ready:
         log.warning(
-            "[FCM disabled] Would push fire alert for incident %s (zone %s) to %d device(s).",
-            ctx.get("id"), ctx.get("zone_id"), len(tokens),
+            "[FCM disabled] Would push %s for incident %s (zone %s) to %d device(s).",
+            what, ctx.get("id"), ctx.get("zone_id"), len(tokens),
         )
         return []
 
     m = _messaging
     dead: list[str] = []
     try:
-        messages = [_build_message(t, ctx) for t in tokens]
+        messages = [builder(t, ctx) for t in tokens]
         resp = m.send_each(messages)
         for token, r in zip(tokens, resp.responses):
             if not r.success and r.exception is not None:
@@ -126,9 +220,21 @@ def send_fire_push(tokens: list[str], ctx: dict) -> list[str]:
                 else:
                     log.warning("FCM send to %s… failed: %s", token[:12], r.exception)
         log.info(
-            "Pushed fire alert for incident %s: %d ok, %d dead token(s).",
-            ctx.get("id"), resp.success_count, len(dead),
+            "Pushed %s for incident %s: %d ok, %d dead token(s).",
+            what, ctx.get("id"), resp.success_count, len(dead),
         )
     except Exception as exc:  # noqa: BLE001
         log.error("FCM send failed for incident %s: %s", ctx.get("id"), exc)
     return dead
+
+
+def send_fire_push(tokens: list[str], ctx: dict) -> list[str]:
+    return _send(tokens, ctx, _build_message, "fire alert")
+
+
+def send_warning_push(tokens: list[str], ctx: dict) -> list[str]:
+    return _send(tokens, ctx, _build_warning_message, "gas warning")
+
+
+def send_classification_push(tokens: list[str], ctx: dict) -> list[str]:
+    return _send(tokens, ctx, _build_classification_message, "fuel classification")

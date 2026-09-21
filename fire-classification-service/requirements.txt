@@ -1,0 +1,19 @@
+# Pinned EXACTLY to model/manifest.json -> library_versions. The fusion bundle
+# carries `_sklearn_version` inside the pickle, so a minor mismatch is an
+# InconsistentVersionWarning at best and a wrong estimator at worst. main.py
+# asserts these at startup rather than letting a drifted image serve wrong
+# verdicts to a fire panel.
+scikit-learn==1.9.1
+xgboost==2.0.3
+pandas==3.0.6
+
+joblib
+# numpy>=2 is what sklearn 1.9 / pandas 3.0 want. The two YOLO services pin
+# numpy<2 for the OpenCV/torch ABI -- which is why this service has its own
+# image rather than being folded into one of theirs.
+numpy>=2
+
+fastapi
+uvicorn[standard]
+python-multipart
+httpx

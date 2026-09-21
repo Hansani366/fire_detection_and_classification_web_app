@@ -60,13 +60,43 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
     detected_at = detected_at or _utcnow().isoformat(timespec="seconds").replace("+00:00", "Z")
     occupancy = None if occupancy is None else max(0, int(occupancy))
 
+    escalated = None
     async with _lock:
         active = await store.get_active_incident_for_zone(db, zone_id)
-        if active:
+        if active and (active.get("severity") or "fire") == "warning":
+            # THE UPGRADE PATH, and the reason tier 3 is not a separate event.
+            # Gas reaches the sensor 14-22s after a camera sees the flame, so a
+            # warning already open in this zone is almost always this same fire
+            # detected earlier by a slower signal. Escalating it in place keeps
+            # one incident, one muster and one timeline; opening a second would
+            # show the responder two fires in one room.
+            inc = await store.escalate_incident(
+                db, active["id"], det_type, confidence, description, detected_at, occupancy)
+            await store.set_zone_status(db, zone_id, _zone_status_for(det_type))
+            log.info("Escalated warning %s to fire (zone %s).", active["id"], zone_id)
+            escalated = inc
+        elif active:
             await store.touch_incident(db, active["id"], confidence, description,
                                        _utcnow().isoformat(timespec="seconds").replace("+00:00", "Z"),
                                        occupancy)
             return {"incidentId": active["id"], "created": False, "reason": "already_active"}
+
+    if escalated is not None:
+        # Push outside the lock, exactly as a new incident does: the phone was
+        # told about a quiet warning and must now be told it is a fire.
+        zone = ZONES_BY_ID[zone_id]
+        tokens = await store.list_tokens(db)
+        dead = fcm.send_fire_push(tokens, {
+            "id": escalated["id"], "zone_id": zone_id, "zone_name": zone["name"],
+            "floor": zone["floor"], "detector_id": zone["detector_id"], "type": det_type,
+            "confidence": confidence, "description": description,
+            "detected_at": detected_at, "occupancy": occupancy,
+        })
+        if dead:
+            await store.delete_tokens(db, dead)
+        return {"incidentId": escalated["id"], "created": False, "reason": "escalated_from_warning"}
+
+    async with _lock:
 
         last = await store.get_last_resolved_for_zone(db, zone_id)
         if not force and last and last.get("resolved_at"):
@@ -96,6 +126,101 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
         await store.delete_tokens(db, dead)
 
     return {"incidentId": inc["id"], "created": True}
+
+
+async def handle_warning(db, zone_id, description, sensor_summary, detected_at,
+                         occupancy=None) -> dict:
+    """Tier 1a: gas above normal, nothing visible. Records and notifies, never alarms.
+
+    Kept deliberately quiet. Gas sensors react to cooking, aerosols, solvents
+    and vehicle exhaust, so a warning that sounded the fire alarm would train
+    people to ignore the fire alarm. It opens a `warning`-severity incident so
+    the event is on the timeline and so a later flame can escalate it in place.
+    """
+    if zone_id not in ZONES_BY_ID:
+        zone_id = DEFAULT_ZONE_ID
+    detected_at = detected_at or _utcnow().isoformat(timespec="seconds").replace("+00:00", "Z")
+    occupancy = None if occupancy is None else max(0, int(occupancy))
+
+    async with _lock:
+        active = await store.get_active_incident_for_zone(db, zone_id)
+        if active:
+            # A fire already open outranks a warning: refresh it and say nothing
+            # more. Downgrading a fire to a warning would be dangerous.
+            await store.touch_incident(
+                db, active["id"], active["confidence"] or 0.0,
+                active["description"] or description,
+                _utcnow().isoformat(timespec="seconds").replace("+00:00", "Z"), occupancy)
+            return {"incidentId": active["id"], "created": False,
+                    "reason": "already_active",
+                    "severity": active.get("severity") or "fire"}
+
+        last = await store.get_last_resolved_for_zone(db, zone_id)
+        if last and last.get("resolved_at"):
+            since = (_utcnow() - _parse(last["resolved_at"])).total_seconds()
+            if since < COOLDOWN_SECONDS:
+                return {"incidentId": None, "created": False, "reason": "cooldown"}
+
+        incident_id = f"warn_{uuid4().hex[:8]}"
+        inc = await store.create_incident(
+            db, incident_id, zone_id, "gas", 0.0, description, detected_at,
+            occupancy, severity="warning")
+        # The zone status stays 'clear'. Nothing is burning, and turning the
+        # map red for a gas reading is exactly the false confidence tier 1a
+        # exists to avoid.
+        log.info("New gas warning %s in zone %s.", incident_id, zone_id)
+
+    zone = ZONES_BY_ID[zone_id]
+    tokens = await store.list_tokens(db)
+    dead = fcm.send_warning_push(tokens, {
+        "id": inc["id"], "zone_id": zone_id, "zone_name": zone["name"],
+        "floor": zone["floor"], "detector_id": zone["detector_id"],
+        "description": description, "detected_at": detected_at,
+        "sensor_summary": sensor_summary,
+    })
+    if dead:
+        await store.delete_tokens(db, dead)
+    return {"incidentId": inc["id"], "created": True, "severity": "warning"}
+
+
+async def handle_classification(db, zone_id, fuel_type, confidence, source,
+                                occupancy=None) -> dict:
+    """Tier 3: attach the fusion model's fuel verdict to the open fire.
+
+    Only pushes when the verdict CHANGES. The dashboard asks for a
+    classification every second; notifying every time would bury the responder
+    under identical messages, and the one thing they need from this -- which
+    extinguisher -- does not change unless the answer does.
+    """
+    if zone_id not in ZONES_BY_ID:
+        zone_id = DEFAULT_ZONE_ID
+
+    async with _lock:
+        active = await store.get_active_incident_for_zone(db, zone_id)
+        if not active:
+            return {"incidentId": None, "applied": False, "reason": "no_active_incident"}
+        if (active.get("severity") or "fire") != "fire":
+            # Classifying a gas warning would assert a fire nobody has seen.
+            return {"incidentId": active["id"], "applied": False, "reason": "not_a_fire"}
+        previous = active.get("fuel_type")
+        inc = await store.set_classification(db, active["id"], fuel_type, confidence, source)
+
+    changed = previous != fuel_type and fuel_type is not None and source == "model"
+    if changed:
+        zone = ZONES_BY_ID[zone_id]
+        tokens = await store.list_tokens(db)
+        dead = fcm.send_classification_push(tokens, {
+            "id": inc["id"], "zone_id": zone_id, "zone_name": zone["name"],
+            "floor": zone["floor"], "fuel_type": fuel_type,
+            "fuel_confidence": confidence,
+            "occupancy": occupancy if occupancy is not None else inc.get("occupancy_current"),
+        })
+        if dead:
+            await store.delete_tokens(db, dead)
+        log.info("Incident %s classified as %s (%.2f).", inc["id"], fuel_type, confidence or 0.0)
+
+    return {"incidentId": inc["id"], "applied": True, "changed": changed,
+            "fuelType": fuel_type}
 
 
 async def handle_clear(db, zone_id: str) -> dict:

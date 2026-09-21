@@ -59,7 +59,19 @@ CREATE TABLE IF NOT EXISTS incidents (
     muster_present INTEGER,
     muster_total   INTEGER,
     occupancy_current INTEGER, -- people the camera sees in the zone right now
-    occupancy_peak    INTEGER  -- most it has seen since this incident opened
+    occupancy_peak    INTEGER, -- most it has seen since this incident opened
+    -- Escalation tier. 'warning' is gas rising with nothing visible and no
+    -- siren; 'fire' is a confirmed fire. A warning UPGRADES to fire in place
+    -- rather than opening a second incident, because gas reaches the sensor
+    -- 14-22s after a camera sees the flame -- so the two are the same event
+    -- arriving twice, not two events.
+    severity       TEXT,     -- warning | fire
+    -- Fuel classification, attached later by the fusion model once the sensors
+    -- agree. NULL until then, and NULL is meaningful: it says "not classified",
+    -- never "no fuel".
+    fuel_type      TEXT,     -- gas_fire | liquid_fuel | solid_combustible
+    fuel_confidence REAL,
+    fuel_source    TEXT      -- 'model' | 'unavailable', with the reason in fuel_type
 );
 """
 
@@ -69,6 +81,10 @@ CREATE TABLE IF NOT EXISTS incidents (
 _ADDED_COLUMNS = (
     ("occupancy_current", "INTEGER"),
     ("occupancy_peak", "INTEGER"),
+    ("severity", "TEXT"),
+    ("fuel_type", "TEXT"),
+    ("fuel_confidence", "REAL"),
+    ("fuel_source", "TEXT"),
 )
 
 
@@ -152,16 +168,65 @@ async def set_zone_status(db, zone_id: str, status: str, last_scan_at: str | Non
 # ── Incidents ────────────────────────────────────────────────────────────────
 
 async def create_incident(db, incident_id, zone_id, det_type, confidence, description,
-                          detected_at, occupancy=None) -> dict:
+                          detected_at, occupancy=None, severity="fire") -> dict:
     now = _utcnow()
     await db.execute(
         """INSERT INTO incidents
              (id, zone_id, type, confidence, description, detected_at, status,
               created_at, resolved_at, resolution, last_event_at, muster_present, muster_total,
-              occupancy_current, occupancy_peak)
-           VALUES (?, ?, ?, ?, ?, ?, 'active', ?, NULL, NULL, ?, ?, ?, ?, ?)""",
+              occupancy_current, occupancy_peak, severity)
+           VALUES (?, ?, ?, ?, ?, ?, 'active', ?, NULL, NULL, ?, ?, ?, ?, ?, ?)""",
         (incident_id, zone_id, det_type, confidence, description, detected_at,
-         now, now, DEFAULT_MUSTER_PRESENT, DEFAULT_MUSTER_TOTAL, occupancy, occupancy),
+         now, now, DEFAULT_MUSTER_PRESENT, DEFAULT_MUSTER_TOTAL, occupancy, occupancy,
+         severity),
+    )
+    await db.commit()
+    return await get_incident(db, incident_id)
+
+
+async def escalate_incident(db, incident_id, det_type, confidence, description,
+                            detected_at, occupancy=None) -> dict:
+    """Raise a warning to a full fire, in place.
+
+    The gas that opened the warning and the flame the camera now sees are the
+    same fire -- the sensors were simply slower. Opening a second incident
+    would show the responder two fires in one room and start a second muster.
+    """
+    now = _utcnow()
+    await db.execute(
+        """UPDATE incidents
+             SET severity = 'fire',
+                 type = ?,
+                 confidence = MAX(confidence, ?),
+                 description = ?,
+                 detected_at = ?,
+                 last_event_at = ?,
+                 occupancy_current = COALESCE(?, occupancy_current),
+                 occupancy_peak = CASE
+                     WHEN ? IS NULL THEN occupancy_peak
+                     ELSE MAX(COALESCE(occupancy_peak, 0), ?)
+                 END
+           WHERE id = ?""",
+        (det_type, confidence, description, detected_at, now,
+         occupancy, occupancy, occupancy, incident_id),
+    )
+    await db.commit()
+    return await get_incident(db, incident_id)
+
+
+async def set_classification(db, incident_id, fuel_type, fuel_confidence, source) -> dict:
+    """Attach (or replace) the fuel verdict on an incident.
+
+    Replaced rather than kept, because the classifier's answer improves as the
+    fire develops -- the reading from 90 seconds in is better evidence than the
+    one from second 31, and a responder wants the current best answer, not the
+    first one.
+    """
+    await db.execute(
+        """UPDATE incidents
+             SET fuel_type = ?, fuel_confidence = ?, fuel_source = ?
+           WHERE id = ?""",
+        (fuel_type, fuel_confidence, source, incident_id),
     )
     await db.commit()
     return await get_incident(db, incident_id)

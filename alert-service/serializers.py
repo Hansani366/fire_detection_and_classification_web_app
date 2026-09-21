@@ -7,6 +7,7 @@ These dicts are the source of truth for the Dart `fromJson` in
 
 from datetime import datetime, timezone
 
+from fcm import FUEL_GUIDANCE, FUEL_LABEL
 from zones_seed import HEALTH_STATIC, SITE_NAME
 
 
@@ -114,9 +115,37 @@ def muster_json(inc: dict) -> dict:
     }
 
 
+def classification_json(inc: dict) -> dict | None:
+    """What is burning, or why we do not know yet.
+
+    Returns None only when nothing has been attempted. Once the dashboard has
+    asked, this is always present — including the `unavailable` case, because
+    "the sensors are still warming up" is information a responder can act on,
+    whereas a blank field looks like a bug.
+    """
+    source = inc.get("fuel_source")
+    if not source:
+        return None
+    return {
+        "fuelType": inc.get("fuel_type"),
+        "confidence": inc.get("fuel_confidence"),
+        "source": source,                      # model | unavailable
+        "guidance": FUEL_GUIDANCE.get(inc.get("fuel_type") or ""),
+        "label": FUEL_LABEL.get(inc.get("fuel_type") or ""),
+        # Both models were trained on CFAST simulation and have never seen a
+        # recorded fire. The app should show this next to the fuel type until
+        # it has been validated against real recordings.
+        "trainedOn": "simulation",
+    }
+
+
 def incident_json(inc: dict, zone: dict) -> dict:
     return {
         "id": inc["id"],
+        # 'warning' = gas rising, nothing visible, no siren. 'fire' = confirmed.
+        # Defaulted rather than nullable so an incident written before this
+        # field existed still reads as a fire.
+        "severity": inc.get("severity") or "fire",
         "zone": zone_json(zone),
         "event": event_json(inc),
         "muster": muster_json(inc),
@@ -124,6 +153,7 @@ def incident_json(inc: dict, zone: dict) -> dict:
             "current": inc.get("occupancy_current"),
             "peak": inc.get("occupancy_peak"),
         },
+        "classification": classification_json(inc),
     }
 
 

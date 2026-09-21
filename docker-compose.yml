@@ -89,15 +89,36 @@ services:
       - human-detection-yolo-service
       - vlm-service
 
-  # ── Ablation Testing Service ──────────────────────────────────
-  # Scores one observation stream through six sensing combinations at once, for
-  # the research paper's ablation table. Owns the trained fusion + sensor
-  # models (vendored under ablation-service/model/, see PROVENANCE.md there).
+  # ── Fire Classification Service ───────────────────────────────
+  # THE ONE PLACE THE TRAINED MODELS LIVE. sensor_model.joblib and
+  # fusion_model.joblib are loaded here and nowhere else; the dashboard and
+  # ablation-service both ask this service for a verdict. One copy of the
+  # weights, one set of pinned versions, and no way for the live system and the
+  # research page to disagree about the same fire.
   #
   # ITS OWN IMAGE ON PURPOSE. It pins scikit-learn/xgboost/pandas to the exact
   # versions that wrote the pickles, which want numpy>=2 — while the two YOLO
   # services pin numpy<2 for the OpenCV/torch ABI. The two sets cannot share an
   # image.
+  fire-classification-service:
+    build: ./fire-classification-service
+    container_name: firewatch-classifier
+    restart: unless-stopped
+    expose:
+      - "8024"
+    environment:
+      - FIRE_YOLO_URL=http://fire-detection-yolo-service:8000/detect
+      - VLM_DETAILED_URL=http://vlm-service:8019/describe-image-detailed/
+      - SENSOR_LATEST_URL=http://esp32-sensor-service:8022/api/sensors/latest
+    depends_on:
+      - fire-detection-yolo-service
+      - vlm-service
+      - esp32-sensor-service
+
+  # ── Ablation Testing Service ──────────────────────────────────
+  # Scores one observation stream through six sensing combinations at once, for
+  # the research paper's ablation table. Holds the rules and the metrics; asks
+  # fire-classification-service for the two trained arms.
   ablation-service:
     build: ./ablation-service
     container_name: firewatch-ablation
@@ -105,6 +126,7 @@ services:
     expose:
       - "8023"
     environment:
+      - CLASSIFIER_URL=http://fire-classification-service:8024
       - FIRE_YOLO_URL=http://fire-detection-yolo-service:8000/detect
       - VLM_DETAILED_URL=http://vlm-service:8019/describe-image-detailed/
       - SENSOR_LATEST_URL=http://esp32-sensor-service:8022/api/sensors/latest
@@ -114,6 +136,10 @@ services:
       # run can never modify its own input.
       - ./ablation-data:/data:ro
     depends_on:
+      # Ordering only — Compose does not wait for readiness, and this service
+      # loads two models before it answers. ablation-service retries on
+      # startup rather than assuming it is up.
+      - fire-classification-service
       - fire-detection-yolo-service
       - vlm-service
       - esp32-sensor-service
@@ -159,9 +185,10 @@ services:
       - esp32-cam-service
       - esp32-sensor-service
       # Not optional: nginx resolves proxy_pass hostnames at config load and
-      # has no resolver, so a missing ablation-service stops nginx starting at
-      # all — taking the whole stack down, not just this one route.
+      # has no resolver, so a missing upstream stops nginx starting at all —
+      # taking the whole stack down, not just that one route.
       - ablation-service
+      - fire-classification-service
 
 volumes:
   alert-data:

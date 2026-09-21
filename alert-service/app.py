@@ -43,6 +43,30 @@ class FireEventIn(BaseModel):
     occupancy: int | None = None
 
 
+class WarningIn(BaseModel):
+    """Tier 1a: gas above normal with nothing visible. Never sounds the alarm."""
+    zoneId: str = DEFAULT_ZONE_ID
+    description: str | None = ""
+    # A short human-readable line of the readings that triggered it, e.g.
+    # "MQ-2 620 ppm (baseline 300), CO 45 ppm, 31 °C". Carried into the push so
+    # the recipient can judge it without opening the app.
+    sensorSummary: str | None = ""
+    detectedAt: str | None = None
+    occupancy: int | None = None
+
+
+class ClassificationIn(BaseModel):
+    """Tier 3: what the fusion model says is burning, for the open incident."""
+    zoneId: str = DEFAULT_ZONE_ID
+    fuelType: str | None = None          # gas_fire | liquid_fuel | solid_combustible
+    confidence: float | None = None
+    # 'model' when classified, 'unavailable' when the classifier was not ready.
+    # Stored either way, so the report can say WHY there is no fuel type rather
+    # than leaving a silent blank.
+    source: str = "model"
+    occupancy: int | None = None
+
+
 class ClearIn(BaseModel):
     zoneId: str = DEFAULT_ZONE_ID
 
@@ -145,6 +169,26 @@ async def get_history():
 async def report_fire(body: FireEventIn):
     return await intake.handle_confirmed_fire(
         _db(), body.zoneId, body.type, body.confidence, body.description, body.detectedAt,
+        occupancy=body.occupancy,
+    )
+
+
+@app.post("/api/events/warning")
+async def report_warning(body: WarningIn):
+    """Tier 1a. Records and notifies quietly; a later flame escalates it in place."""
+    return await intake.handle_warning(
+        _db(), body.zoneId, body.description, body.sensorSummary,
+        body.detectedAt, occupancy=body.occupancy,
+    )
+
+
+@app.post("/api/events/classification")
+async def report_classification(body: ClassificationIn):
+    """Tier 3. Attaches the fuel verdict to whatever fire is already open."""
+    if body.source not in ("model", "unavailable"):
+        raise HTTPException(400, "source must be 'model' or 'unavailable'")
+    return await intake.handle_classification(
+        _db(), body.zoneId, body.fuelType, body.confidence, body.source,
         occupancy=body.occupancy,
     )
 

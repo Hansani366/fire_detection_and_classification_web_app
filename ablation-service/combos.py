@@ -6,11 +6,14 @@ per-window scalar score. The scalar is what makes the comparison honest --
 reporting only the operating point invites "you tuned the rules to lose", so
 every arm also yields an ROC/PR curve from its score, which is threshold-free.
 
-COMBINATIONS 1 AND 6 SHARE ONE INFERENCE. `fire_classifier.build_features()`
-already runs sensor_model.predict_proba and splices the four probabilities in
-as `sensor_p_*`, because the fusion model consumes them. Combination 1 reads
-those same columns rather than calling the model again: one call, two arms, and
-no chance of the two disagreeing.
+COMBINATIONS 1 AND 6 SHARE ONE INFERENCE. Both probability sets come back from
+a single call to fire-classification-service, which runs sensor_model to feed
+the fusion model anyway. One call, two arms, and no chance of the two
+disagreeing about the same window.
+
+THE MODELS ARE NOT LOADED HERE. This service holds the research question -- the
+six rules, the metrics, the ground-truth definitions -- and asks the service
+that owns the weights for the two trained arms. See classifier_client.py.
 
 THE DEBOUNCE IS SHARED, AND IT IS THE ONLY DEFINITION OF "ALARM". A raw rule
 firing for one window is not an alarm; HOLD_WINDOWS consecutive windows is.
@@ -121,16 +124,32 @@ def _collapse_to_binary(proba: pd.DataFrame, classes: list[str], groups: pd.Seri
     return alarm, score.rename(None)
 
 
-def combo1_sensors(features: pd.DataFrame, manifest: dict,
-                   classes: list[str]) -> tuple[pd.Series, pd.Series]:
-    """Sensors only — sensor_model.joblib, read from the spliced columns.
+def smooth_proba(proba: np.ndarray, groups: np.ndarray, window: int) -> np.ndarray:
+    """The manifest's causal probability smoothing, renormalised.
 
-    build_features() has already run sensor_model.predict_proba to feed the
-    fusion model, so this reads those columns instead of calling it again: one
-    inference, two arms, and no way for the two to disagree.
+    Reproduces fire_classifier._smooth. It lives here rather than being asked
+    of the classification service because the service returns raw
+    probabilities: a caller that wants them unsmoothed (for an ROC curve)
+    should not have to ask twice.
     """
-    proba = features[[f"sensor_p_{c}" for c in classes]]
-    proba.columns = list(classes)
+    frame = pd.DataFrame(proba)
+    frame[GROUP] = groups
+    rolled = (frame.groupby(GROUP, sort=False)[list(range(proba.shape[1]))]
+                   .rolling(window, min_periods=1).mean()
+                   .reset_index(level=0, drop=True)
+                   .to_numpy())
+    return rolled / rolled.sum(axis=1, keepdims=True)
+
+
+def combo1_sensors(features: pd.DataFrame, manifest: dict, classes: list[str],
+                   sensor_proba: np.ndarray) -> tuple[pd.Series, pd.Series]:
+    """Sensors only — sensor_model's own four-class output.
+
+    The probabilities arrive alongside the fusion model's from one call, since
+    the fusion model consumes them anyway. Asking twice would mean two
+    inferences that could disagree.
+    """
+    proba = pd.DataFrame(sensor_proba, columns=list(classes), index=features.index)
     return _collapse_to_binary(proba, list(classes), features[GROUP],
                                manifest["config"]["smooth_window"])
 
@@ -205,35 +224,39 @@ def combo5_vlm_yolo(
 
 
 def combo6_fusion(
-    features: pd.DataFrame, manifest: dict, clf,
+    features: pd.DataFrame, manifest: dict, classes: list[str],
+    fusion_proba: np.ndarray,
 ) -> tuple[pd.Series, pd.Series, pd.DataFrame]:
     """All three — the trained fusion model, plus its 4-class fuel verdict."""
-    groups = features[GROUP]
-    proba = clf.fusion.predict_proba(features[clf.fusion_features])
+    groups = features[GROUP].to_numpy()
     # The manifest's causal smoothing over the whole vector, renormalised --
-    # the same call the model's own predict() makes, so combination 6 is scored
-    # exactly as trained_model_v3/metrics.csv scored it.
-    proba = clf._smooth(proba, groups.to_numpy())
+    # the same operation the model's own predict() performs, so combination 6
+    # is scored exactly as trained_model_v3/metrics.csv scored it.
+    proba = smooth_proba(fusion_proba, groups, manifest["config"]["smooth_window"])
 
-    frame = pd.DataFrame(proba, columns=[f"p_{c}" for c in clf.classes],
+    frame = pd.DataFrame(proba, columns=[f"p_{c}" for c in classes],
                          index=features.index)
-    frame["predicted_class"] = [clf.classes[i] for i in proba.argmax(axis=1)]
+    frame["predicted_class"] = [classes[i] for i in proba.argmax(axis=1)]
     frame["confidence"] = proba.max(axis=1)
     frame["low_confidence"] = frame["confidence"] < manifest["config"]["gate_threshold"]
 
     # Already smoothed above, so collapse without smoothing twice.
-    no_fire_idx = clf.classes.index("no_fire")
+    no_fire_idx = classes.index("no_fire")
     alarm = pd.Series(proba.argmax(axis=1) != no_fire_idx, index=features.index)
-    score = 1.0 - frame[f"p_{clf.classes[no_fire_idx]}"]
+    score = 1.0 - frame[f"p_{classes[no_fire_idx]}"]
     return alarm, score.rename(None), frame
 
 
 # ── orchestration ────────────────────────────────────────────────────────────
 
 def score_all(
-    features: pd.DataFrame, manifest: dict, clf, combos: list[int] | None = None,
+    features: pd.DataFrame, manifest: dict, classes: list[str], proba: dict,
+    combos: list[int] | None = None,
 ) -> dict:
-    """Run every requested combination over one prepared feature frame.
+    """Run every requested combination over one frame of raw observations.
+
+    `proba` is the response from fire-classification-service: {"fusion": ...,
+    "sensor": ...}, one row each, already aligned with `features`.
 
     Returns per-window raw rules, debounced alarms and scores, keyed by combo
     number, plus combination 6's fuel-class frame.
@@ -245,13 +268,13 @@ def score_all(
     fuel = None
 
     # 1 and 2 first: 4 and 5 are built from them, so they are computed once.
-    raw[1], score[1] = combo1_sensors(features, manifest, clf.classes)
+    raw[1], score[1] = combo1_sensors(features, manifest, classes, proba["sensor"])
     raw[2], score[2] = combo2_yolo(features, manifest)
     raw[3], score[3] = combo3_vlm(features, manifest)
     raw[4], score[4] = combo4_sensors_yolo(
         features, manifest, raw[1], score[1], raw[2], score[2])
     raw[5], score[5] = combo5_vlm_yolo(features, manifest, raw[2], score[2], score[3])
-    raw[6], score[6], fuel = combo6_fusion(features, manifest, clf)
+    raw[6], score[6], fuel = combo6_fusion(features, manifest, classes, proba["fusion"])
 
     return {
         "raw": {c: raw[c] for c in wanted},

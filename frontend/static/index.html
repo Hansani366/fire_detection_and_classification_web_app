@@ -1026,6 +1026,7 @@ button:disabled {
 
 <script src="/js/camera-sources.js"></script>
 <script src="/js/sensor-panel.js"></script>
+<script src="/js/escalation.js"></script>
 <script>
 "use strict";
 
@@ -1089,6 +1090,12 @@ const S = {
   humanHealthy:       true,
   fireMs:             null,
   humanMs:            null,
+
+  /* Escalation ladder: 'clear' | 'warning' | 'danger' | 'fire', and the fuel
+     verdict once the classifier has one. Both are owned by escalation.js and
+     mirrored here only so render() can read them. */
+  tier: 'clear',
+  classification: null,
 
   /* Bumped whenever the feed is torn down. In-flight VLM calls carry the
      generation they started in and drop their result if it has moved on —
@@ -1336,10 +1343,12 @@ async function startMonitoring() {
   btnStop.disabled  = false;
 
   if (S.sourceId === 'esp32') startHealthPoll();
+  Escalation.start();
   startLoop();
 }
 
 function stopMonitoring() {
+  Escalation.stop();
   stopLoop();
   stopHealthPoll();
   stopMirror();
@@ -1597,18 +1606,19 @@ async function detectOnce() {
             : `[VLM: no threat — ${vlm.type ?? 'unknown'}]`;
           S.log.push({ ts: nowHMS(), text: logText });
 
-          /* ── ALARM: YOLO + VLM must both agree ── */
-          if (VLM_CONFIRM_REQUIRED) {
-            S.fireAlarm = vlm.detected === true;
-          } else {
-            S.fireAlarm = true; // YOLO alone
-          }
-
-          /* ── Report the confirmed fire once (rising edge) → mobile push ── */
-          if (S.fireAlarm && !S.reported) {
-            S.reported = true;
-            reportFire(vlm);
-          }
+          /* ── ALARM: the ladder decides, not this line ──
+             YOLO + VLM agreement is still tier 2 and still the main path.
+             What changed is that Escalation also weighs the sensors, so a
+             dangerous CO reading can raise the alarm with nothing visible,
+             and a VLM outage no longer silently disables it. Reporting to
+             alert-service moved there too, so one place owns the decision. */
+          Escalation.onVision({
+            yoloHit: true,
+            vlmConfirmed: VLM_CONFIRM_REQUIRED ? (vlm.detected === true) : true,
+            vlmAvailable: true,
+            vlm: vlm,
+            occupancy: S.occNow,
+          });
 
           render();
         })
@@ -1619,6 +1629,14 @@ async function detectOnce() {
           console.warn('[VLM]', e.message);
           // FIX 3: VLM failure does NOT clear the alarm or boxes.
           // The hold timer will expire naturally.
+          //
+          // But it DOES tell the ladder the VLM is unreachable, which lets
+          // YOLO + sensors raise the alarm between them. Before this, a dead
+          // VLM meant no alarm could ever fire, however obvious the fire.
+          Escalation.onVision({
+            yoloHit: true, vlmConfirmed: false, vlmAvailable: false,
+            vlm: null, occupancy: S.occNow,
+          });
           render();
         })
         .finally(() => { S.pendingVlm = false; });
@@ -1630,10 +1648,13 @@ async function detectOnce() {
        so boxes stay visible across brief missed frames.      */
     const age = Date.now() - S.lastDetectionTime;
     if (age > DETECTION_HOLD_MS) {
-      if (S.reported) reportClear();   // fire is gone → let alert-service resolve the incident
+      /* Vision has gone quiet — but that is no longer the same as "all clear".
+         Dangerous gas can still be holding tier 1b up, so the ladder is told
+         what the camera sees and decides the alarm itself. It also owns the
+         clear event now, so alert-service hears it once, from one place. */
+      Escalation.onVision({ yoloHit: false, vlmConfirmed: false,
+                            vlmAvailable: true, vlm: null, occupancy: S.occNow });
       S.lastDetections = [];
-      S.fireAlarm      = false;
-      S.reported       = false;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
     // else: keep existing boxes on screen
@@ -2000,9 +2021,31 @@ fetch('/api/esp32/config')
 
 /* The sensor nodes push on their own schedule, so the panel polls from page
    load rather than from Start Monitoring — a gas reading is worth showing
-   whether or not anyone is watching the camera. It is read-only for now: it
-   does not feed the alarm, which still requires YOLO and the VLM to agree. */
-SensorPanel.start({ body: $('sensor-body'), status: $('sensor-state') });
+   whether or not anyone is watching the camera.
+
+   Its readings now also feed the escalation ladder, which is what lets a
+   dangerous CO level raise the alarm with nothing visible on camera. The panel
+   still polls from page load; the ladder only acts once monitoring starts. */
+Escalation.configure({
+  zoneId: CAMERA_ZONE_ID,
+  /* The classifier needs the frame the dashboard already has, so it borrows
+     the same capture path rather than opening a second camera stream. */
+  captureFrame: () => captureBlob(0.75),
+  onChange: (st) => {
+    /* The ladder owns the alarm now. Tier 2 is still "YOLO and the VLM agree",
+       but tier 1b can also raise it on dangerous gas alone, and a VLM outage
+       no longer silently disables it. */
+    S.fireAlarm = st.alarm;
+    S.tier = st.tier;
+    S.classification = st.classification;
+    if (st.tier === 'warning' && st.warningText) {
+      S.log.push({ ts: nowHMS(), text: `[warning] ${st.warningText}` });
+    }
+    render();
+  },
+});
+SensorPanel.start({ body: $('sensor-body'), status: $('sensor-state') },
+                  Escalation.onSensors);
 
 render();
 </script>

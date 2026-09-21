@@ -319,8 +319,8 @@ def fuel_scores(y_true: np.ndarray, y_pred: np.ndarray, classes: list[str],
 
 # ── orchestration ────────────────────────────────────────────────────────────
 
-def evaluate(scored: dict, truth: pd.DataFrame, clf, manifest: dict,
-             synthetic: bool) -> dict:
+def evaluate(scored: dict, truth: pd.DataFrame, classes: list[str],
+             manifest: dict, synthetic: bool) -> dict:
     """Everything the results page and the export need, for every combination."""
     combos = sorted(scored["alarm"])
     y_window = truth["y_window"].to_numpy()
@@ -403,19 +403,19 @@ def evaluate(scored: dict, truth: pd.DataFrame, clf, manifest: dict,
 
     if scored.get("fuel") is not None:
         fuel = scored["fuel"]
-        proba_cols = [f"p_{c}" for c in clf.classes]
+        proba_cols = [f"p_{c}" for c in classes]
         ev = (fuel.assign(**{GROUP: truth[GROUP].to_numpy()})
                   .groupby(GROUP, sort=False)[proba_cols].mean()
                   .reindex(event_ids))
-        ev_pred = np.array([clf.classes[i] for i in ev.to_numpy().argmax(axis=1)])
+        ev_pred = np.array([classes[i] for i in ev.to_numpy().argmax(axis=1)])
         ev_true = (truth.groupby(GROUP, sort=False)["fire_type"].first()
                         .reindex(event_ids).to_numpy())
         gate = ev.to_numpy().max(axis=1) < manifest["config"]["gate_threshold"]
         result["fuel"] = {
-            "classes": clf.classes,
-            "event": fuel_scores(ev_true, ev_pred, clf.classes, gate),
+            "classes": classes,
+            "event": fuel_scores(ev_true, ev_pred, classes, gate),
             "window": fuel_scores(truth["fire_type"].to_numpy(),
-                                  fuel["predicted_class"].to_numpy(), clf.classes),
+                                  fuel["predicted_class"].to_numpy(), classes),
             "gate_threshold": manifest["config"]["gate_threshold"],
         }
     # Sanitised once, here, rather than at each route: every caller of
