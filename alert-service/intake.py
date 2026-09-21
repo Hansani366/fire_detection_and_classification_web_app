@@ -99,7 +99,14 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
     async with _lock:
 
         last = await store.get_last_resolved_for_zone(db, zone_id)
-        if not force and last and last.get("resolved_at"):
+        # A WARNING MUST NEVER GATE A FIRE. The cooldown exists to stop one
+        # fire from being reported as several incidents while it flickers in
+        # and out of view. A gas warning is not a fire, so letting it start
+        # that cooldown means a genuine fire in the two minutes after someone
+        # opens a window is silently dropped -- no incident, no push, no alarm
+        # on anyone's phone. Found by testing exactly that sequence.
+        gating = last and (last.get("severity") or "fire") == "fire"
+        if not force and gating and last.get("resolved_at"):
             since = (_utcnow() - _parse(last["resolved_at"])).total_seconds()
             if since < COOLDOWN_SECONDS:
                 log.info("Zone %s cleared %.0fs ago (< %ds cooldown) — suppressing.", zone_id, since, COOLDOWN_SECONDS)
