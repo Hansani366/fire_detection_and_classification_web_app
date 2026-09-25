@@ -102,18 +102,26 @@ def test_smoke_with_a_smoke_box_is_supported():
     assert "thick" in c["text"] and "black" in c["text"]
 
 
-def test_smoke_with_no_box_but_a_gas_reading_is_supported_by_the_sensors():
-    out = _build({"smokePresent": True}, {"smokeBoxes": 0, "gasLevel": "warn"})
+def test_the_gas_channel_gets_no_vote_on_a_visual_claim():
+    """Sensors catch gas leaks and feed the classifier. They do not grade what
+    the camera saw, and the verdict must not move when they change."""
+    seen = {
+        gas: _by_id(_build({"smokePresent": True},
+                           {"smokeBoxes": 0, "gasLevel": gas}), "smoke")["category"]
+        for gas in ("normal", "warn", "danger", "")
+    }
+    assert len(set(seen.values())) == 1, seen
+    assert set(seen.values()) == {report.UNSUPPORTED}
+
+
+def test_a_missed_smoke_box_leaves_the_claim_unchecked_not_refuted():
+    """Smoke is the weaker detector class -- Section 3.4.3 reports per-class
+    results for exactly this reason. A miss is not a refutation."""
+    out = _build({"smokePresent": True, "smokeColour": "black"}, {"smokeBoxes": 0})
     c = _by_id(out, "smoke")
-    assert c["category"] == report.SUPPORTED
-    assert c["evidence"] == "sensors"
-    # The sensors cannot see colour, and the reason says so.
-    assert "not checked by any sensor" in c["why"]
-
-
-def test_smoke_with_nothing_backing_it_is_contradicted():
-    out = _build({"smokePresent": True}, {"smokeBoxes": 0, "gasLevel": "normal"})
-    assert _by_id(out, "smoke")["category"] == report.CONTRADICTED
+    assert c["category"] == report.UNSUPPORTED
+    assert "smoke" in out["released"]          # marked, still shown
+    assert "weaker detector class" in c["why"]
 
 
 def test_denying_smoke_the_detector_can_see_is_contradicted():
@@ -136,7 +144,7 @@ def test_grounding_figures_match_section_3_4_7():
         {"material": "fabric rolls", "materialFamily": "solid",   # supported
          "smokePresent": True,                                    # unsupported
          "peopleVisible": False},                                 # contradicted
-        {"fuelType": "solid_combustible", "occupancy": 2},
+        {"fuelType": "solid_combustible", "occupancy": 2, "smokeBoxes": 0},
     )
     g = out["grounding"]
     assert g["claims"] == 4          # + location

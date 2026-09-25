@@ -337,14 +337,36 @@ time, in `alert-service/report.py`:
 | Burning material | the fuel classifier's verdict | `fire-classification-service` |
 | Location | the stored zone model | never generated — system-supplied |
 | Approximate size | largest fire box as a share of the frame | fire YOLO |
-| Smoke characteristics | smoke boxes, and the graded gas channel | fire YOLO + sensors |
+| Smoke characteristics | smoke boxes on the same frame | fire YOLO |
 | Presence of any person | the head-count | human YOLO |
+
+**Raw sensor readings grade nothing here, and that is deliberate.** A fire is confirmed by
+the fire detector and the vision-language model agreeing on the same frame. The sensors have
+two jobs — catching a gas leak, which can kill with nothing visible, and feeding the fuel
+classifier — and neither of them is refereeing what a camera saw. A gas reading that
+overruled a visual observation would be borrowing an instrument for a task it was never
+pointed at.
+
+It would also be wrong in practice. Gas has to drift to a sensor near the ceiling and
+arrives well after the camera sees the flame, so at the moment a report is generated the
+channel usually still reads normal. Withholding a correct smoke description on that basis
+treats a lagging instrument's silence as evidence of absence — the same error the system
+refuses elsewhere, where an unknown head-count is never read as an empty room.
+
+The gas level is still **stored** with the incident as logged evidence, so the analysis in
+§3.4.7 can use it afterwards. It simply gets no vote on what reaches a responder.
 
 **The release rule**, which is the part to state:
 
 - **Contradicted** → withheld. It never reaches the phone. A report saying nobody is present
   while the human detector counts three is not a nuance, and a responder acting on it
-  decides worse than one told nothing.
+  decides worse than one told nothing. Only **same-frame positive evidence** can contradict:
+  a detector box that exists, or a head-count that disagrees.
+- **A detector that found nothing does not contradict.** Smoke is the weaker of the two
+  detector classes, which is why §3.4.3 already reports per-class results rather than a mean.
+  A smoke description with no matching box is recorded as unsupported, not refuted —
+  overruling the model because a known-weak detector missed something would be the more
+  confident error.
 - **Unsupported** → released, but **marked "unverified"** on screen. Dropping these would
   strip out most of the report's content — smoke colour is useful and no sensor observes it
   — but presenting them as findings is exactly the hallucination risk Table 3.20 names.
@@ -367,6 +389,15 @@ Two consequences worth stating with the results:
    a responder is exposed to is lower, because contradicted claims were removed. Report
    both and say which is which — conflating them would credit the model for a control the
    system provides.
+
+**A smaller gap, worth closing separately.** Algorithm 2 calls the fuel classifier only
+when the gas level is above normal — a rule that exists because the sensors lag the camera.
+Chapter 3 never states that lag anywhere, so the rule currently appears in the thesis with
+no stated justification. Two options: assert the figure where the tier-3 upgrade is
+explained in §3.2.5.2, or measure it. The stamps needed are already recorded on every
+incident (`detected_at` against `classified_at`, and `durations.fireToClassifiedS` in the
+incident report), so it could be a reported result rather than a number carried over from
+the build notes.
 
 **Section 3.2.5.3 also needs a line.** It currently describes the VLM returning three fields
 (`detected`, `type`, `description`, Table 3.10). A second, separate prompt now returns the

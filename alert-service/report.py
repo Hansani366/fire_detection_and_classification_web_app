@@ -38,6 +38,14 @@ THE THREE CATEGORIES, AND WHAT EACH ONE COSTS:
 A claim nobody can check is not the same as a claim that is wrong, and neither is
 the same as a claim that is right. Collapsing those three into "the model said
 so" is the failure this module exists to prevent.
+
+WHAT MAY OVERRULE WHAT. A fire is confirmed by the fire detector and the VLM
+agreeing on the same frame; the sensors are there to catch gas leaks, which can
+kill with nothing visible, and to feed the fuel classifier. So a claim about what
+the camera saw is graded against same-frame detector output and against the
+classifier's verdict -- never against a raw sensor reading. The gas channel is
+still stored with the incident as logged evidence for the analysis in Section
+3.4.7; it simply gets no vote on what reaches a responder.
 """
 
 SUPPORTED = "supported"
@@ -138,7 +146,28 @@ def _check_size(scene, ev):
 
 
 def _check_smoke(scene, ev):
-    """Smoke, against the smoke detector class and the graded gas level."""
+    """Smoke, against the smoke detector class on the same frame.
+
+    THE GAS CHANNEL DELIBERATELY TAKES NO PART IN THIS. The sensors are not part
+    of visual fire detection: a fire is confirmed by YOLO and the VLM agreeing,
+    and the sensors exist to catch gas leaks -- which can kill with nothing
+    visible -- and to feed the fuel classifier. Letting a gas reading grade a
+    visual observation borrows an instrument for a job it was never pointed at.
+
+    It would also be wrong in practice. Gas has to drift to a sensor on the
+    ceiling and arrives well after a camera sees the flame, so at the moment a
+    report is generated the channel usually still reads normal. Withholding a
+    correct smoke description on that basis treats a lagging instrument's silence
+    as evidence of absence.
+
+    The asymmetry below is on purpose. A missing smoke box makes a claim
+    UNSUPPORTED, not contradicted: smoke is the weaker of the two detector
+    classes, which is why Section 3.4.3 reports per-class results rather than a
+    mean, and overruling the VLM because a known-weak detector missed a box would
+    be the more confident error. A smoke box found while the description denies
+    smoke is different -- that is positive evidence, on the same frame, against a
+    negative claim.
+    """
     present = scene.get("smokePresent")
     if present is None:
         return None
@@ -149,28 +178,21 @@ def _check_smoke(scene, ev):
         else "Smoke: none visible"
 
     boxes = ev.get("smokeBoxes")
-    gas = (ev.get("gasLevel") or "").lower()
-    gassy = gas in ("warn", "danger")
 
-    if boxes is None and not gas:
+    if boxes is None:
         return _claim("smoke", "Smoke", text, UNSUPPORTED, "none",
-                      "Neither the detector nor the sensors logged anything "
-                      "about smoke for this frame.")
+                      "No detector output was logged for this frame, so there is "
+                      "nothing to check the description against.")
     if present:
-        if (boxes or 0) > 0:
+        if boxes > 0:
             return _claim("smoke", "Smoke", text, SUPPORTED, "detector",
                           f"The fire detector found {boxes} smoke box(es) in "
                           "the same frame.")
-        if gassy:
-            # Corroborating, not confirming: the sensors cannot see colour or
-            # density, so only the presence claim is carried by this evidence.
-            return _claim("smoke", "Smoke", text, SUPPORTED, "sensors",
-                          f"No smoke box, but the gas channel is graded "
-                          f"'{gas}', which is consistent with smoke. Colour and "
-                          "density are not checked by any sensor.")
-        return _claim("smoke", "Smoke", text, CONTRADICTED, "detector+sensors",
-                      "No smoke box in the frame and the gas channel is normal.")
-    if (boxes or 0) > 0:
+        return _claim("smoke", "Smoke", text, UNSUPPORTED, "detector",
+                      "The fire detector found no smoke box in this frame. Smoke "
+                      "is the weaker detector class, so this neither confirms nor "
+                      "refutes what the description reports.")
+    if boxes > 0:
         return _claim("smoke", "Smoke", text, CONTRADICTED, "detector",
                       f"The fire detector found {boxes} smoke box(es) in the "
                       "same frame.")
