@@ -12,6 +12,8 @@ from uuid import uuid4
 
 import db as store
 import fcm
+import routing
+import sites
 from zones_seed import DEFAULT_ZONE_ID, ZONES_BY_ID
 
 log = logging.getLogger("alert.intake")
@@ -40,8 +42,57 @@ def _zone_status_for(det_type: str) -> str:
     return "smoke" if det_type == "smoke" else "fire"
 
 
+def _route_for_push(inc: dict | None) -> dict | None:
+    """The wire subset of a stored route, for the FCM payload."""
+    if not inc:
+        return None
+    import serializers as ser  # local: avoids a cycle at module import
+    return ser.route_json(inc)
+
+
+async def _attach_route(db, incident_id: str, zone_id: str, detected_at: str) -> None:
+    """Generate and store the escape route for an open incident.
+
+    ROUTING MUST NEVER BE ABLE TO SUPPRESS THE ALARM. Everything in here is
+    wrapped, and a failure is recorded on the incident rather than raised: a
+    missing route is a worse screen, but a missing alarm is a fire nobody was
+    told about. The push goes out either way, from the caller, outside the lock.
+
+    Cheap enough (sub-millisecond over tens of nodes, and no `await` inside) that
+    it runs under the intake lock, which guarantees the route is stored before any
+    reader can see the incident.
+    """
+    try:
+        site = sites.ACTIVE
+        if zone_id not in site.zone_anchors:
+            await store.set_incident_route_error(
+                db, incident_id, f"zone {zone_id!r} has no anchor in site {site.key!r}")
+            return
+        rr = routing.route_for_zone(site, fire_zone_id=zone_id)
+        record = rr.to_record()
+        blocked = {"edges": [list(e) for e in rr.blocked_edges],
+                   "exits": list(rr.blocked_exit_ids),
+                   "unreachable": list(rr.unreachable_exit_ids)}
+        latency = None
+        try:
+            latency = max(0.0, (_utcnow() - _parse(detected_at)).total_seconds() * 1000.0)
+        except Exception:  # noqa: BLE001 - a bad stamp must not lose the route
+            pass
+        await store.set_incident_route(db, incident_id, record, blocked, latency)
+        log.info("Route for %s (%s): %s %s, %.1f m in %.2f ms",
+                 incident_id, zone_id, rr.status, rr.exit_id or rr.refuge_node,
+                 rr.length_m, rr.generation_ms)
+    except Exception as exc:  # noqa: BLE001
+        log.error("Route generation failed for %s: %s", incident_id, exc)
+        try:
+            await store.set_incident_route_error(db, incident_id, f"{type(exc).__name__}: {exc}")
+        except Exception:  # noqa: BLE001
+            pass
+
+
 async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, detected_at,
-                                force=False, occupancy=None) -> dict:
+                                force=False, occupancy=None, severity="fire",
+                                verification="confirmed") -> dict:
     """
     Called on every confirmed-fire event. Returns {"incidentId", "created"}.
     De-dupes: repeat events for an already-active incident refresh it silently;
@@ -51,11 +102,24 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
     `occupancy` is how many people the human detector can see in the zone, or
     None if it had nothing to report. It refreshes on every repeat event, so the
     muster count tracks the room emptying — see serializers.muster_json.
+
+    `severity` distinguishes tier 2 ('fire', a flame confirmed on camera) from
+    tier 1b ('gas_danger', dangerous gas with nothing visible). Both alarm and
+    both ride the fire channel — a camera cannot see carbon monoxide, so tier 1b
+    has to be loud — but only one of them should claim a flame was seen.
+
+    `verification` records whether the vision-language model was reachable. It is
+    stored rather than inferred, because 'unavailable' is not a rejection: per
+    Algorithm 2 a fire box plus sensors above normal still confirms a fire when
+    the VLM cannot be reached, and the responder is entitled to know that the
+    alarm rests on detection evidence alone.
     """
     if zone_id not in ZONES_BY_ID:
         log.warning("Unknown zone '%s' — falling back to %s.", zone_id, DEFAULT_ZONE_ID)
         zone_id = DEFAULT_ZONE_ID
     det_type = det_type or "fire"
+    severity = severity if severity in ("fire", "gas_danger") else "fire"
+    verification = verification or "confirmed"
     confidence = float(confidence or 0.0)
     detected_at = detected_at or _utcnow().isoformat(timespec="seconds").replace("+00:00", "Z")
     occupancy = None if occupancy is None else max(0, int(occupancy))
@@ -71,10 +135,13 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
             # one incident, one muster and one timeline; opening a second would
             # show the responder two fires in one room.
             inc = await store.escalate_incident(
-                db, active["id"], det_type, confidence, description, detected_at, occupancy)
+                db, active["id"], det_type, confidence, description, detected_at, occupancy,
+                severity=severity, verification=verification)
             await store.set_zone_status(db, zone_id, _zone_status_for(det_type))
+            # A warning carries no route (nothing is burning). Now something is.
+            await _attach_route(db, active["id"], zone_id, detected_at)
             log.info("Escalated warning %s to fire (zone %s).", active["id"], zone_id)
-            escalated = inc
+            escalated = await store.get_incident(db, active["id"])
         elif active:
             await store.touch_incident(db, active["id"], confidence, description,
                                        _utcnow().isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -91,6 +158,8 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
             "floor": zone["floor"], "detector_id": zone["detector_id"], "type": det_type,
             "confidence": confidence, "description": description,
             "detected_at": detected_at, "occupancy": occupancy,
+            "severity": severity, "verification": verification,
+            "route": _route_for_push(await store.get_incident(db, escalated["id"])),
         })
         if dead:
             await store.delete_tokens(db, dead)
@@ -114,8 +183,10 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
 
         incident_id = f"inc_{uuid4().hex[:8]}"
         inc = await store.create_incident(db, incident_id, zone_id, det_type, confidence,
-                                          description, detected_at, occupancy)
+                                          description, detected_at, occupancy,
+                                          severity=severity, verification=verification)
         await store.set_zone_status(db, zone_id, _zone_status_for(det_type))
+        await _attach_route(db, incident_id, zone_id, detected_at)
         log.info("New incident %s in zone %s (type=%s conf=%.2f occupancy=%s).",
                  incident_id, zone_id, det_type, confidence,
                  "unknown" if occupancy is None else occupancy)
@@ -126,6 +197,8 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
         "id": inc["id"], "zone_id": zone_id, "zone_name": zone["name"], "floor": zone["floor"],
         "detector_id": zone["detector_id"], "type": det_type, "confidence": confidence,
         "description": description, "detected_at": detected_at, "occupancy": occupancy,
+        "severity": severity, "verification": verification,
+        "route": _route_for_push(await store.get_incident(db, inc["id"])),
     }
     tokens = await store.list_tokens(db)
     dead = fcm.send_fire_push(tokens, ctx)
@@ -171,7 +244,8 @@ async def handle_warning(db, zone_id, description, sensor_summary, detected_at,
         incident_id = f"warn_{uuid4().hex[:8]}"
         inc = await store.create_incident(
             db, incident_id, zone_id, "gas", 0.0, description, detected_at,
-            occupancy, severity="warning")
+            occupancy, severity="warning", verification="not_applicable",
+            sensor_summary=sensor_summary)
         # The zone status stays 'clear'. Nothing is burning, and turning the
         # map red for a gas reading is exactly the false confidence tier 1a
         # exists to avoid.

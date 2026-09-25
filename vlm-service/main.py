@@ -228,9 +228,31 @@ async def describe_image(file: UploadFile = File(...)):
         return {"description": description, "detected": parsed.get("detected"), "type": parsed.get("type")}
 
     except json.JSONDecodeError as e:
-        # Model didn't return valid JSON — treat as no detection to avoid false alarms
+        # AN ERROR IS NOT AN OBSERVATION.
+        #
+        # This used to return 200 with detected=False, on the reasoning that a
+        # malformed answer should not raise a false alarm. But a 200 is a
+        # VERDICT: it is byte-for-byte identical to the model looking at the
+        # frame and saying "there is no fire here". The caller cannot tell the
+        # two apart, so a model that has started babbling silently votes against
+        # every alarm -- and it votes hardest when it is most broken.
+        #
+        # Failing loudly is also the SAFER branch, not the riskier one. The
+        # arbitration in Algorithm 2 treats an unreachable verifier as
+        # 'unavailable', and a fire box plus sensors above normal still confirms
+        # a fire on that path. So raising here preserves the alarm, while
+        # returning a fabricated rejection suppresses it.
+        #
+        # It matters for the record as well: the grounding analysis counts the
+        # 'detected' field against ground truth, and a parse failure scored as a
+        # genuine negative corrupts that count with no trace anywhere.
         logger.warning("VLM returned non-JSON response: %s | error: %s", response.content[:200], e)
-        return {"description": "", "detected": False, "type": None}
+        raise HTTPException(status_code=502, detail="VLM returned unparseable output")
+
+    except HTTPException:
+        # Already a considered answer (the parse failure above) -- do not
+        # re-wrap it as a generic inference failure.
+        raise
 
     except Exception:
         logger.exception("VLM inference failed")

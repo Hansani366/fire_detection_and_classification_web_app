@@ -62,17 +62,82 @@ def is_ready() -> bool:
     return _ready
 
 
+def _lede(ctx: dict) -> str:
+    """The first sentence of an alarm, and it must be literally true.
+
+    THREE ALARMS ARRIVE ON THIS CHANNEL AND ONLY ONE OF THEM SAW A FLAME.
+    Tier 1b (gas_danger) is dangerous gas with nothing visible — a camera cannot
+    see carbon monoxide — so telling the occupant "two AI checks confirmed
+    flames" would be a fabrication on the one alarm most likely to arrive while
+    they are asleep. And a fire confirmed while the VLM was unreachable was
+    confirmed by ONE check plus the sensors, not two; claiming otherwise inflates
+    the evidence at exactly the moment someone is deciding whether to believe it.
+    """
+    if ctx.get("severity") == "gas_danger":
+        return "Dangerous gas detected. No fire seen on camera."
+    if ctx.get("verification") == "unavailable":
+        return "Fire detected by camera and sensors. Scene check unavailable."
+    return "Two AI checks confirmed flames."
+
+
 def _notification_body(ctx: dict) -> str:
     """People still in the zone is the most actionable thing on a lock screen,
     so it goes in the body when the human detector has a number. A count of
     None means it had nothing to say — say nothing rather than imply zero."""
+    lede = _lede(ctx)
     occupancy = ctx.get("occupancy")
     if occupancy is None:
-        return "Two AI checks confirmed flames. Tap for your safe route."
+        return f"{lede} Tap for your safe route."
     if occupancy == 0:
-        return "Two AI checks confirmed flames. No one detected in the zone."
+        return f"{lede} No one detected in the zone."
     people = "1 person" if occupancy == 1 else f"{occupancy} people"
-    return f"Two AI checks confirmed flames. {people} still in the zone."
+    return f"{lede} {people} still in the zone."
+
+
+def _notification_title(ctx: dict) -> str:
+    """Tier 1b gets its own title for the same reason it gets its own lede."""
+    where = f"{ctx['zone_name']}, {ctx['floor']}"
+    if ctx.get("severity") == "gas_danger":
+        return f"⚠️ Dangerous gas — {where}"
+    return f"🔥 Fire detected — {where}"
+
+
+# An FCM message is capped at 4 KB and every value is a string, so the route
+# travels flattened. It fits easily -- about 220 bytes -- because the phone
+# already holds the building and only needs what the fire changed.
+#
+# THIS IS WHAT MAKES THE OFFLINE PATH GOOD. With these fields the app can draw a
+# complete, correct route with no network at all: pull the Wi-Fi, fire the alert,
+# the map still says which way to walk.
+_MAX_POLYLINE_CHARS = 900
+
+
+def _route_fields(route: dict | None) -> dict:
+    if not route:
+        return {}
+    pts = ";".join(f"{p['x']:g},{p['y']:g}" for p in route.get("polyline", []))
+    truncated = len(pts) > _MAX_POLYLINE_CHARS
+    if truncated:
+        # Half a path is worse than none: the app falls back to a straight line
+        # to the muster point rather than walking someone off the end of it.
+        pts = ""
+    hazard = route.get("hazard") or {}
+    muster = route.get("muster") or {}
+    return {
+        "routeStatus": str(route.get("status") or ""),
+        "routeSiteKey": str(route.get("siteKey") or ""),
+        "routePlanRevision": str(route.get("planRevision") or ""),
+        "routeExitName": str(route.get("exitName") or ""),
+        "routeInstruction": str(route.get("instruction") or ""),
+        "routeLengthM": f"{route.get('lengthM', 0)}",
+        "routeBlockedExits": ",".join(route.get("blockedExitIds") or []),
+        "routePolyline": pts,
+        "routePolylineTruncated": "1" if truncated else "",
+        "routeHazard": (f"{hazard.get('x', 0):g},{hazard.get('y', 0):g},"
+                        f"{hazard.get('radiusPx', 0):g}" if hazard else ""),
+        "routeMuster": (f"{muster.get('x', 0):g},{muster.get('y', 0):g}"
+                        if muster else ""),
+    }
 
 
 def _build_message(token: str, ctx: dict):
@@ -81,11 +146,16 @@ def _build_message(token: str, ctx: dict):
     return m.Message(
         token=token,
         notification=m.Notification(
-            title=f"🔥 Fire detected — {ctx['zone_name']}, {ctx['floor']}",
+            title=_notification_title(ctx),
             body=_notification_body(ctx),
         ),
         data={
             "type": "fire_alert",
+            # Tier 1b rides this channel too (it must be loud), so the app needs
+            # the tier itself to word the screen. Without it the phone shows a
+            # flame headline for an alarm where nothing was visible.
+            "severity": str(ctx.get("severity") or "fire"),
+            "verification": str(ctx.get("verification") or "confirmed"),
             "route": "/incident",
             "incidentId": str(ctx["id"]),
             "zoneId": str(ctx["zone_id"]),
@@ -99,6 +169,7 @@ def _build_message(token: str, ctx: dict):
             # Empty string rather than "None" when unknown — the Dart side
             # parses these as strings and "None" would read as a real value.
             "occupancy": "" if occupancy is None else str(occupancy),
+            **_route_fields(ctx.get("route")),
         },
         android=m.AndroidConfig(
             priority="high",
@@ -168,8 +239,13 @@ def _build_classification_message(token: str, ctx: dict):
             "zoneName": str(ctx["zone_name"]),
             "floor": str(ctx["floor"]),
             "fuelType": str(fuel),
+            "fuelLabel": label,
             "fuelConfidence": str(ctx.get("fuel_confidence") or ""),
             "fuelGuidance": guidance,
+            # Both models learned from CFAST simulation and have never seen a
+            # recorded fire. Sent on every classification so the phone can say so
+            # even when it builds the incident from this payload alone.
+            "trainedOn": "simulation",
             "occupancy": "" if ctx.get("occupancy") is None else str(ctx["occupancy"]),
         },
         android=m.AndroidConfig(

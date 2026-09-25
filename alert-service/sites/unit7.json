@@ -1,0 +1,364 @@
+{
+  "key": "unit7",
+  "name": "Unit 7",
+  "revision": "2026-09-25.1",
+  "note": "The demo facility. Coordinates are a transcription of the Flutter painter's constants at 10 px/m, so the drawing and the graph describe the same building. See sites/README.md.",
+  "render": {
+    "pxPerM": 10.0,
+    "designW": 360,
+    "designH": 348
+  },
+  "hazardRadiusM": 6.0,
+  "defaultZoneId": "fabric-store",
+  "zones": [
+    {
+      "id": "fabric-store",
+      "name": "Fabric Store",
+      "floor": "Main floor",
+      "detector_id": "Detector 01",
+      "glyph": "fabricRoll"
+    },
+    {
+      "id": "cutting-floor",
+      "name": "Cutting Floor",
+      "floor": "Main floor",
+      "detector_id": "Detector 02",
+      "glyph": "scissors"
+    },
+    {
+      "id": "dyeing",
+      "name": "Dyeing Section",
+      "floor": "Main floor",
+      "detector_id": "Detector 03",
+      "glyph": "dyeing"
+    },
+    {
+      "id": "sewing-a",
+      "name": "Sewing Line A",
+      "floor": "Main floor",
+      "detector_id": "Detector 04",
+      "glyph": "iron"
+    },
+    {
+      "id": "warehouse",
+      "name": "Warehouse",
+      "floor": "Main floor",
+      "detector_id": "Detector 05",
+      "glyph": "warehouse"
+    },
+    {
+      "id": "boiler",
+      "name": "Boiler Room",
+      "floor": "Main floor",
+      "detector_id": "Detector 06",
+      "glyph": "boiler"
+    },
+    {
+      "id": "finishing",
+      "name": "Finishing",
+      "floor": "Main floor",
+      "detector_id": "Detector 07",
+      "glyph": "finishing"
+    }
+  ],
+  "exits": [
+    {
+      "id": "exit-east",
+      "name": "EAST FIRE EXIT",
+      "node": "n-exit-east",
+      "priority": 1
+    },
+    {
+      "id": "exit-north",
+      "name": "North door",
+      "node": "n-exit-north",
+      "priority": 2
+    },
+    {
+      "id": "exit-south",
+      "name": "South door",
+      "node": "n-exit-south",
+      "priority": 3
+    },
+    {
+      "id": "exit-bay",
+      "name": "Loading bay",
+      "node": "n-exit-bay",
+      "priority": 4
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n-fs",
+      "x": 13.8,
+      "y": 5.5,
+      "kind": "work",
+      "zoneId": "fabric-store"
+    },
+    {
+      "id": "n-dy",
+      "x": 19.0,
+      "y": 5.5,
+      "kind": "work",
+      "zoneId": "dyeing"
+    },
+    {
+      "id": "n-cu",
+      "x": 13.8,
+      "y": 11.9,
+      "kind": "work",
+      "zoneId": "cutting-floor"
+    },
+    {
+      "id": "n-wh",
+      "x": 19.0,
+      "y": 11.9,
+      "kind": "work",
+      "zoneId": "warehouse"
+    },
+    {
+      "id": "n-fi",
+      "x": 13.8,
+      "y": 21.7,
+      "kind": "work",
+      "zoneId": "finishing"
+    },
+    {
+      "id": "n-se",
+      "x": 19.0,
+      "y": 21.7,
+      "kind": "work",
+      "zoneId": "sewing-a"
+    },
+    {
+      "id": "n-bo",
+      "x": 13.8,
+      "y": 28.7,
+      "kind": "work",
+      "zoneId": "boiler",
+      "refuge": true
+    },
+    {
+      "id": "n-pa",
+      "x": 19.0,
+      "y": 28.7,
+      "kind": "work"
+    },
+    {
+      "id": "n-c-n",
+      "x": 16.3,
+      "y": 5.5,
+      "kind": "junction"
+    },
+    {
+      "id": "n-c-m",
+      "x": 16.3,
+      "y": 11.9,
+      "kind": "junction"
+    },
+    {
+      "id": "n-cross",
+      "x": 16.3,
+      "y": 17.1,
+      "kind": "junction"
+    },
+    {
+      "id": "n-c-s",
+      "x": 16.3,
+      "y": 21.7,
+      "kind": "junction"
+    },
+    {
+      "id": "n-c-ss",
+      "x": 16.3,
+      "y": 28.7,
+      "kind": "junction"
+    },
+    {
+      "id": "n-c-w",
+      "x": 12.5,
+      "y": 17.1,
+      "kind": "door"
+    },
+    {
+      "id": "n-c-e",
+      "x": 21.2,
+      "y": 17.1,
+      "kind": "door"
+    },
+    {
+      "id": "n-exit-east",
+      "x": 33.3,
+      "y": 17.1,
+      "kind": "exit"
+    },
+    {
+      "id": "n-exit-north",
+      "x": 6.5,
+      "y": 1.4,
+      "kind": "exit"
+    },
+    {
+      "id": "n-exit-south",
+      "x": 7.5,
+      "y": 32.6,
+      "kind": "exit"
+    },
+    {
+      "id": "n-exit-bay",
+      "x": 26.2,
+      "y": 32.6,
+      "kind": "exit"
+    }
+  ],
+  "edges": [
+    {
+      "a": "n-fs",
+      "b": "n-c-n"
+    },
+    {
+      "a": "n-dy",
+      "b": "n-c-n"
+    },
+    {
+      "a": "n-cu",
+      "b": "n-c-m"
+    },
+    {
+      "a": "n-wh",
+      "b": "n-c-m"
+    },
+    {
+      "a": "n-fi",
+      "b": "n-c-s"
+    },
+    {
+      "a": "n-se",
+      "b": "n-c-s"
+    },
+    {
+      "a": "n-bo",
+      "b": "n-c-ss"
+    },
+    {
+      "a": "n-pa",
+      "b": "n-c-ss"
+    },
+    {
+      "a": "n-c-n",
+      "b": "n-c-m"
+    },
+    {
+      "a": "n-c-m",
+      "b": "n-cross"
+    },
+    {
+      "a": "n-cross",
+      "b": "n-c-s"
+    },
+    {
+      "a": "n-c-s",
+      "b": "n-c-ss"
+    },
+    {
+      "a": "n-c-w",
+      "b": "n-cross"
+    },
+    {
+      "a": "n-cross",
+      "b": "n-c-e"
+    },
+    {
+      "a": "n-c-e",
+      "b": "n-exit-east"
+    },
+    {
+      "a": "n-c-w",
+      "b": "n-cu"
+    },
+    {
+      "a": "n-c-e",
+      "b": "n-wh"
+    },
+    {
+      "a": "n-fs",
+      "b": "n-exit-north"
+    },
+    {
+      "a": "n-bo",
+      "b": "n-exit-south"
+    },
+    {
+      "a": "n-pa",
+      "b": "n-exit-bay"
+    }
+  ],
+  "zoneAnchors": {
+    "fabric-store": {
+      "node": "n-fs",
+      "firePoint": {
+        "x": 4.2,
+        "y": 6.6
+      }
+    },
+    "dyeing": {
+      "node": "n-dy",
+      "firePoint": {
+        "x": 30.0,
+        "y": 5.1
+      }
+    },
+    "cutting-floor": {
+      "node": "n-cu",
+      "firePoint": {
+        "x": 3.2,
+        "y": 12.1
+      }
+    },
+    "warehouse": {
+      "node": "n-wh",
+      "firePoint": {
+        "x": 30.0,
+        "y": 12.1
+      }
+    },
+    "finishing": {
+      "node": "n-fi",
+      "firePoint": {
+        "x": 3.2,
+        "y": 21.7
+      }
+    },
+    "sewing-a": {
+      "node": "n-se",
+      "firePoint": {
+        "x": 30.0,
+        "y": 21.7
+      }
+    },
+    "boiler": {
+      "node": "n-bo",
+      "firePoint": {
+        "x": 3.2,
+        "y": 28.6
+      }
+    }
+  },
+  "groundTruth": {
+    "fabric-store": {
+      "exitId": "exit-east",
+      "refugeExpected": false,
+      "why": "The north door is 5.7 m from the fire and is cut, so the route runs the length of the corridor to the east exit."
+    },
+    "dyeing": {
+      "exitId": "exit-north",
+      "refugeExpected": false,
+      "why": "13.6 m north against 31.3 m east, measured along the graph."
+    },
+    "boiler": {
+      "exitId": "exit-bay",
+      "refugeExpected": false,
+      "why": "The south door is 5.9 m from the fire and is cut; the loading bay is the next nearest."
+    }
+  }
+}

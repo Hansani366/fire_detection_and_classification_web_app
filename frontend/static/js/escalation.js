@@ -124,7 +124,10 @@
   function onVision(v) {
     S.yoloHit = !!v.yoloHit;
     S.vlmConfirmed = !!v.vlmConfirmed;
-    S.vlmAvailable = v.vlmAvailable !== false;
+    // Only update when the caller actually has something to say. A frame with no
+    // YOLO box makes no VLM call, so it cannot report the service as healthy --
+    // doing so used to clear a genuine outage flag every quiet frame.
+    if (v.vlmAvailable !== undefined) S.vlmAvailable = v.vlmAvailable !== false;
     S.vlm = v.vlm || null;
     if (v.occupancy !== undefined) S.occupancy = v.occupancy;
     evaluate();
@@ -210,6 +213,21 @@
       confidence: tier === 'danger' ? 0.0 : (vlm.confidence || 0.9),
       description: description,
       occupancy: S.occupancy,
+      /* THE TIER HAS TO TRAVEL WITH THE EVENT. Until it did, tier 1b was posted
+         as an ordinary fire carrying confidence 0.0, and the phone had no way to
+         tell "dangerous gas, nothing visible" from "a flame the camera saw and
+         was only 0% sure about". It rendered the second one, next to a fire
+         alarm, as "Confidence 0%". */
+      severity: tier === 'danger' ? 'gas_danger' : 'fire',
+      /* Four outcomes, and they are genuinely different things. Tier 1b never
+         asked the model -- there was no box to verify -- so it is neither a
+         confirmation nor a rejection nor an outage. An unreachable VLM is not a
+         rejection either (Algorithm 2 keeps the alarm), but it does change what
+         the incident may claim about itself afterwards. */
+      verification: tier === 'danger' ? 'not_applicable'
+                  : !S.vlmAvailable   ? 'unavailable'
+                  : S.vlmConfirmed    ? 'confirmed'
+                                      : 'rejected',
     }).catch(function (e) { console.warn('[escalation] fire report failed', e); });
   }
 
@@ -327,6 +345,11 @@
     }
     S.tier = 'clear'; S.alarm = false; S.yoloHit = false;
     S.vlmConfirmed = false; S.classification = null;
+    /* Reset the VLM health flag too. It is an observation about the last call,
+       not a property of the session, and leaving it false across a stop/start
+       made the next run confirm fires on the "VLM unreachable" branch while the
+       service was in fact answering. */
+    S.vlmAvailable = true;
     if (S.onChange) S.onChange(state());
   }
 

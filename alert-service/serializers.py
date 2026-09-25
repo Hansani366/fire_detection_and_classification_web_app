@@ -5,6 +5,7 @@ These dicts are the source of truth for the Dart `fromJson` in
 `firewatch/lib/data/models/models.dart`. Keys are camelCase to match Dart.
 """
 
+import json
 from datetime import datetime, timezone
 
 import extinguishers as ext
@@ -143,13 +144,53 @@ def classification_json(inc: dict) -> dict | None:
     }
 
 
+def route_json(inc: dict) -> dict | None:
+    """The generated escape route, or None.
+
+    EMBEDDED IN THE INCIDENT RATHER THAN FETCHED SEPARATELY. The incident screen
+    is the one screen that must never fail: it opens from a notification tap, on a
+    phone that has just woken up, sometimes on a network having a bad minute. The
+    app already fetches /api/state and /api/incidents/{id}, so putting the route
+    in there costs no extra round trip and adds no new way to fail. It is about
+    400 bytes.
+
+    Geometry is deliberately NOT here. The app owns the rooms, doors and exit bars
+    as const data; only the parts that change with the fire travel. `siteKey` tells
+    it which drawing to pair the route with.
+
+    None means no route: no incident, or generation failed. The app renders that as
+    the plan with no overlays, which is a path it already has.
+    """
+    raw = inc.get("route_json")
+    if not raw:
+        return None
+    try:
+        record = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    # Serve the wire subset, not the analysis record.
+    keep = ("status", "siteKey", "planRevision", "fireZoneId", "from", "hazard",
+            "polyline", "exitId", "exitName", "muster", "blockedExitIds",
+            "lengthM", "originReanchored", "instruction", "generatedInMs")
+    return {k: record[k] for k in keep if k in record}
+
+
 def incident_json(inc: dict, zone: dict) -> dict:
     return {
         "id": inc["id"],
-        # 'warning' = gas rising, nothing visible, no siren. 'fire' = confirmed.
-        # Defaulted rather than nullable so an incident written before this
-        # field existed still reads as a fire.
+        # 'warning' = gas rising, nothing visible, no siren (tier 1a).
+        # 'gas_danger' = dangerous gas, still nothing visible, but it DOES alarm
+        # (tier 1b) -- a camera cannot see carbon monoxide. 'fire' = a flame
+        # confirmed on camera. Defaulted rather than nullable so an incident
+        # written before this field existed still reads as a fire.
         "severity": inc.get("severity") or "fire",
+        # Whether the VLM was reachable when this opened. 'unavailable' means the
+        # alarm stands on detection evidence alone, so the app must NOT claim it
+        # was confirmed by two AI checks. Defaulted for the same reason.
+        "verification": inc.get("verification") or "confirmed",
+        # The readings behind a gas warning, so the phone can show what it is
+        # reacting to rather than only asserting that something is happening.
+        "sensorSummary": inc.get("sensor_summary") or "",
         "zone": zone_json(zone),
         "event": event_json(inc),
         "muster": muster_json(inc),
@@ -158,6 +199,7 @@ def incident_json(inc: dict, zone: dict) -> dict:
             "peak": inc.get("occupancy_peak"),
         },
         "classification": classification_json(inc),
+        "route": route_json(inc),
     }
 
 
@@ -227,7 +269,20 @@ def report_json(inc: dict, zone: dict) -> dict:
     main thing the whole escalation design is for.
     """
     severity = inc.get("severity") or "fire"
-    escalated = severity == "fire" and (inc.get("created_at") != inc.get("detected_at"))
+    alarmed = severity in ("fire", "gas_danger")
+    escalated = alarmed and (inc.get("created_at") != inc.get("detected_at"))
+
+    # What the alarm actually was, in the responder's words. A tier 1b alarm must
+    # never be written up as "fire confirmed": nobody saw a flame, and an
+    # investigation reading this record afterwards would be misled about what the
+    # system knew.
+    if severity == "warning":
+        alarm_label = "Gas warning raised"
+    elif severity == "gas_danger":
+        alarm_label = "Gas reached dangerous levels" if not escalated else \
+                      "Gas warning escalated to a gas alarm"
+    else:
+        alarm_label = "Gas warning escalated to fire" if escalated else "Fire confirmed"
 
     timeline = []
     if escalated:
@@ -235,8 +290,7 @@ def report_json(inc: dict, zone: dict) -> dict:
                          "detail": "Sensor readings above normal, nothing visible on camera."})
     timeline.append({
         "at": inc.get("detected_at"),
-        "what": "Gas warning escalated to fire" if escalated else (
-            "Gas warning raised" if severity == "warning" else "Fire confirmed"),
+        "what": alarm_label,
         "detail": inc.get("description") or "",
     })
     if inc.get("classified_at"):
@@ -252,6 +306,7 @@ def report_json(inc: dict, zone: dict) -> dict:
     return {
         "id": inc["id"],
         "severity": severity,
+        "verification": inc.get("verification") or "confirmed",
         "escalatedFromWarning": escalated,
         "zone": zone_json(zone),
         "status": inc.get("status"),
@@ -267,6 +322,9 @@ def report_json(inc: dict, zone: dict) -> dict:
             "atClose": inc.get("occupancy_current"),
         },
         "muster": muster_json(inc),
+        "route": route_json(inc),
+        "routeLatencyMs": inc.get("route_latency_ms"),
+        "routeError": inc.get("route_error"),
         "timeline": timeline,
         "durations": {
             # How long the sensors saw it before anything was visible. The

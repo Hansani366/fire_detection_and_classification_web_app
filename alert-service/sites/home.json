@@ -1,0 +1,362 @@
+{
+  "key": "home",
+  "name": "Home",
+  "revision": "2026-09-25.1",
+  "note": "The real trial facility, traced from the hand sketch (home_layout.png). Eight areas tiling a 13.28 x 9.68 m footprint, two exterior doors. Coordinates are metres; the Flutter side draws the same building at 25 px/m in a 360 x 280 design space. See sites/README.md and THESIS_CHANGES.md.",
+  "render": {
+    "pxPerM": 25.0,
+    "designW": 360,
+    "designH": 280
+  },
+  "hazardRadiusM": 2.0,
+  "hazardRadiusNote": "Much smaller than Unit 7's 6 m, and it has to be. The rooms here are about 3 m across, so a 6 m radius would reach every room from anywhere and every route would collapse to a refuge instruction. At 2.0 m a fire blocks the doorway it is standing in without swallowing the house.",
+  "defaultZoneId": "living",
+  "zones": [
+    {
+      "id": "kitchen",
+      "name": "Kitchen",
+      "floor": "Ground floor",
+      "detector_id": "Detector 01",
+      "glyph": "kitchen"
+    },
+    {
+      "id": "dining",
+      "name": "Dining Area",
+      "floor": "Ground floor",
+      "detector_id": "Detector 02",
+      "glyph": "dining"
+    },
+    {
+      "id": "living",
+      "name": "Living Area",
+      "floor": "Ground floor",
+      "detector_id": "Detector 03",
+      "glyph": "living"
+    },
+    {
+      "id": "verander",
+      "name": "Verander",
+      "floor": "Ground floor",
+      "detector_id": "Detector 04",
+      "glyph": "verander"
+    },
+    {
+      "id": "bedroom-west",
+      "name": "Bedroom (West)",
+      "floor": "Ground floor",
+      "detector_id": "Detector 05",
+      "glyph": "bedroom"
+    },
+    {
+      "id": "bedroom-southwest",
+      "name": "Bedroom (SW)",
+      "floor": "Ground floor",
+      "detector_id": "Detector 06",
+      "glyph": "bedroom"
+    },
+    {
+      "id": "bedroom-northeast",
+      "name": "Bedroom (NE)",
+      "floor": "Ground floor",
+      "detector_id": "Detector 07",
+      "glyph": "bedroom"
+    },
+    {
+      "id": "bedroom-southeast",
+      "name": "Bedroom (SE)",
+      "floor": "Ground floor",
+      "detector_id": "Detector 08",
+      "glyph": "bedroom"
+    }
+  ],
+  "exits": [
+    {
+      "id": "exit-north",
+      "name": "FRONT DOOR",
+      "node": "n-exit-north",
+      "priority": 1
+    },
+    {
+      "id": "exit-south",
+      "name": "BACK DOOR",
+      "node": "n-exit-south",
+      "priority": 2
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n-kitchen",
+      "x": 2.0,
+      "y": 2.2,
+      "kind": "work",
+      "zoneId": "kitchen"
+    },
+    {
+      "id": "n-bed-w",
+      "x": 2.0,
+      "y": 5.4,
+      "kind": "work",
+      "zoneId": "bedroom-west"
+    },
+    {
+      "id": "n-bed-sw",
+      "x": 2.0,
+      "y": 8.6,
+      "kind": "work",
+      "zoneId": "bedroom-southwest"
+    },
+    {
+      "id": "n-dining",
+      "x": 6.92,
+      "y": 2.2,
+      "kind": "work",
+      "zoneId": "dining"
+    },
+    {
+      "id": "n-living",
+      "x": 6.92,
+      "y": 5.2,
+      "kind": "work",
+      "zoneId": "living"
+    },
+    {
+      "id": "n-verander",
+      "x": 6.92,
+      "y": 8.56,
+      "kind": "work",
+      "zoneId": "verander"
+    },
+    {
+      "id": "n-bed-ne",
+      "x": 12.24,
+      "y": 2.0,
+      "kind": "work",
+      "zoneId": "bedroom-northeast",
+      "refuge": true
+    },
+    {
+      "id": "n-bed-se",
+      "x": 12.24,
+      "y": 6.8,
+      "kind": "work",
+      "zoneId": "bedroom-southeast",
+      "refuge": true
+    },
+    {
+      "id": "n-d-kitchen",
+      "x": 3.56,
+      "y": 2.16,
+      "kind": "door"
+    },
+    {
+      "id": "n-d-bed-w",
+      "x": 3.56,
+      "y": 5.36,
+      "kind": "door"
+    },
+    {
+      "id": "n-d-bed-sw",
+      "x": 3.56,
+      "y": 8.56,
+      "kind": "door"
+    },
+    {
+      "id": "n-d-bed-ne",
+      "x": 10.68,
+      "y": 1.88,
+      "kind": "door"
+    },
+    {
+      "id": "n-d-bed-se",
+      "x": 10.68,
+      "y": 4.8,
+      "kind": "door"
+    },
+    {
+      "id": "n-o-dl",
+      "x": 9.6,
+      "y": 3.64,
+      "kind": "junction"
+    },
+    {
+      "id": "n-o-lv",
+      "x": 7.84,
+      "y": 6.88,
+      "kind": "junction"
+    },
+    {
+      "id": "n-exit-north",
+      "x": 6.92,
+      "y": 0.56,
+      "kind": "exit"
+    },
+    {
+      "id": "n-exit-south",
+      "x": 9.24,
+      "y": 10.24,
+      "kind": "exit"
+    }
+  ],
+  "edges": [
+    {
+      "a": "n-kitchen",
+      "b": "n-d-kitchen"
+    },
+    {
+      "a": "n-d-kitchen",
+      "b": "n-dining"
+    },
+    {
+      "a": "n-bed-w",
+      "b": "n-d-bed-w"
+    },
+    {
+      "a": "n-d-bed-w",
+      "b": "n-living"
+    },
+    {
+      "a": "n-bed-sw",
+      "b": "n-d-bed-sw"
+    },
+    {
+      "a": "n-d-bed-sw",
+      "b": "n-verander"
+    },
+    {
+      "a": "n-dining",
+      "b": "n-o-dl"
+    },
+    {
+      "a": "n-o-dl",
+      "b": "n-living"
+    },
+    {
+      "a": "n-living",
+      "b": "n-o-lv"
+    },
+    {
+      "a": "n-o-lv",
+      "b": "n-verander"
+    },
+    {
+      "a": "n-dining",
+      "b": "n-d-bed-ne"
+    },
+    {
+      "a": "n-d-bed-ne",
+      "b": "n-bed-ne"
+    },
+    {
+      "a": "n-living",
+      "b": "n-d-bed-se"
+    },
+    {
+      "a": "n-d-bed-se",
+      "b": "n-bed-se"
+    },
+    {
+      "a": "n-dining",
+      "b": "n-exit-north"
+    },
+    {
+      "a": "n-verander",
+      "b": "n-exit-south"
+    }
+  ],
+  "zoneAnchors": {
+    "kitchen": {
+      "node": "n-kitchen",
+      "firePoint": {
+        "x": 1.2,
+        "y": 2.2
+      }
+    },
+    "bedroom-west": {
+      "node": "n-bed-w",
+      "firePoint": {
+        "x": 1.2,
+        "y": 5.4
+      }
+    },
+    "bedroom-southwest": {
+      "node": "n-bed-sw",
+      "firePoint": {
+        "x": 1.2,
+        "y": 8.6
+      }
+    },
+    "dining": {
+      "node": "n-dining",
+      "firePoint": {
+        "x": 6.0,
+        "y": 1.2
+      }
+    },
+    "living": {
+      "node": "n-living",
+      "firePoint": {
+        "x": 5.2,
+        "y": 5.2
+      }
+    },
+    "verander": {
+      "node": "n-verander",
+      "firePoint": {
+        "x": 5.2,
+        "y": 8.56
+      }
+    },
+    "bedroom-northeast": {
+      "node": "n-bed-ne",
+      "firePoint": {
+        "x": 12.8,
+        "y": 2.0
+      }
+    },
+    "bedroom-southeast": {
+      "node": "n-bed-se",
+      "firePoint": {
+        "x": 12.8,
+        "y": 7.6
+      }
+    }
+  },
+  "groundTruth": {
+    "kitchen": {
+      "exitId": "exit-north",
+      "refugeExpected": false,
+      "why": "The kitchen's own fire does not block its door (2.36 m away, radius 2.0), so the occupant leaves through the dining area to the front door."
+    },
+    "dining": {
+      "exitId": "exit-south",
+      "refugeExpected": false,
+      "why": "Scenario 2. The fire sits beside the front door, which is the nearest exit by straight line and the wrong one. The correct route reverses and runs south through the living area."
+    },
+    "living": {
+      "exitId": "exit-south",
+      "refugeExpected": false
+    },
+    "verander": {
+      "exitId": "exit-north",
+      "refugeExpected": false,
+      "why": "Scenario 3. The back door itself is clear, but the fire sits across the only path to it, so the route runs the length of the house to the front door instead."
+    },
+    "bedroom-northeast": {
+      "exitId": "exit-north",
+      "refugeExpected": false,
+      "why": "Scenario 1. Far from both doors, and the obvious route is also the correct one."
+    },
+    "bedroom-southeast": {
+      "exitId": "exit-south",
+      "refugeExpected": false
+    },
+    "bedroom-west": {
+      "exitId": "exit-south",
+      "refugeExpected": false
+    },
+    "bedroom-southwest": {
+      "exitId": "exit-south",
+      "refugeExpected": false
+    }
+  }
+}

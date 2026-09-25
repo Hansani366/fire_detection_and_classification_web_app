@@ -1725,8 +1725,11 @@ async function detectOnce() {
          Dangerous gas can still be holding tier 1b up, so the ladder is told
          what the camera sees and decides the alarm itself. It also owns the
          clear event now, so alert-service hears it once, from one place. */
+      /* No box means no VLM call, so this frame has no opinion on whether the
+         service is up. Omit the flag rather than asserting health we did not
+         test -- see Escalation.onVision. */
       Escalation.onVision({ yoloHit: false, vlmConfirmed: false,
-                            vlmAvailable: true, vlm: null, occupancy: S.occNow });
+                            vlm: null, occupancy: S.occNow });
       S.lastDetections = [];
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }

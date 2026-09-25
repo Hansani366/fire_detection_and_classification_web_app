@@ -6,12 +6,16 @@ incidents (active + resolved). History is *derived* from resolved incidents,
 so there is no separate history table.
 """
 
+import json
+import logging
 import os
 from datetime import datetime, timezone
 
 import aiosqlite
 
 from zones_seed import ZONES
+
+log = logging.getLogger("alert.db")
 
 DB_PATH = os.getenv("DB_PATH", "alert.db")
 
@@ -65,7 +69,25 @@ CREATE TABLE IF NOT EXISTS incidents (
     -- rather than opening a second incident, because gas reaches the sensor
     -- 14-22s after a camera sees the flame -- so the two are the same event
     -- arriving twice, not two events.
-    severity       TEXT,     -- warning | fire
+    severity       TEXT,     -- warning | gas_danger | fire
+    -- WHY gas_danger IS ITS OWN SEVERITY, not a fire with confidence 0. Tier 1b
+    -- is dangerous gas with nothing visible: a camera cannot see carbon
+    -- monoxide, so the alarm is real but there is no flame to describe. Folding
+    -- it into 'fire' is what made the phone render "Confidence 0%" next to a
+    -- fire alarm -- a number that looks broken precisely when it is correct.
+    -- It still alarms and still rides the fire channel; only the wording differs.
+
+    -- Whether the vision-language model was reachable when this incident opened
+    -- (Algorithm 3). 'unavailable' is NOT a rejection: a fire box plus sensors
+    -- above normal confirms a fire even when the VLM cannot be reached, and the
+    -- incident records that it was confirmed on detection evidence alone. The
+    -- app must not claim "confirmed by 2 AI checks" on that path.
+    verification   TEXT,     -- confirmed | rejected | unavailable | not_applicable
+    -- The raw reading line behind a gas warning ("MQ-2 620 ppm (warn), CO 45 ppm").
+    -- Stored, not just pushed: the warning screen is reachable from the zone
+    -- list minutes later, and the description alone ("gas is rising") is an
+    -- assertion the reader cannot check without the numbers under it.
+    sensor_summary TEXT,
     -- Fuel classification, attached later by the fusion model once the sensors
     -- agree. NULL until then, and NULL is meaningful: it says "not classified",
     -- never "no fuel".
@@ -76,7 +98,31 @@ CREATE TABLE IF NOT EXISTS incidents (
     -- because the gap between them IS the finding: the sensors need 14-22s to
     -- catch up with the camera, and the incident report should show that
     -- honestly rather than implying the system knew everything at once.
-    classified_at  TEXT
+    classified_at  TEXT,
+    -- The generated escape route, stored rather than recomputed later.
+    --
+    -- WHY THE WHOLE THING IS KEPT. The route-validity analysis asks four
+    -- questions afterwards: did it reach a usable exit, did it pass within the
+    -- hazard radius, how much longer was it than the hand-derived best route,
+    -- and did it correctly refuse when there was no way out. Re-deriving any of
+    -- that later would answer them about whatever the building looks like THEN.
+    -- The blocked set in particular is evidence, not a cache.
+    --
+    -- route_site_key and route_plan_revision are not bookkeeping either: without
+    -- them nobody can tell which building, or which version of it, a stored route
+    -- was computed against, and the optimality gap quietly stops meaning anything
+    -- the first time a wall moves mid-trial.
+    route_json          TEXT,   -- the full RouteResult record
+    route_blocked_json  TEXT,   -- {edges, exits, unreachable}
+    route_exit_id       TEXT,
+    route_refuge        INTEGER,-- 0 | 1
+    route_length_m      REAL,
+    route_generation_ms REAL,   -- the algorithm alone
+    route_latency_ms    REAL,   -- detected_at -> route ready; THIS is the RO2.2 number
+    route_generated_at  TEXT,
+    route_site_key      TEXT,
+    route_plan_revision TEXT,
+    route_error         TEXT    -- why there is no route; never a silent blank
 );
 """
 
@@ -91,6 +137,19 @@ _ADDED_COLUMNS = (
     ("fuel_confidence", "REAL"),
     ("fuel_source", "TEXT"),
     ("classified_at", "TEXT"),
+    ("verification", "TEXT"),
+    ("sensor_summary", "TEXT"),
+    ("route_json", "TEXT"),
+    ("route_blocked_json", "TEXT"),
+    ("route_exit_id", "TEXT"),
+    ("route_refuge", "INTEGER"),
+    ("route_length_m", "REAL"),
+    ("route_generation_ms", "REAL"),
+    ("route_latency_ms", "REAL"),
+    ("route_generated_at", "TEXT"),
+    ("route_site_key", "TEXT"),
+    ("route_plan_revision", "TEXT"),
+    ("route_error", "TEXT"),
 )
 
 
@@ -111,16 +170,47 @@ async def connect() -> aiosqlite.Connection:
 
 
 async def init_db(db: aiosqlite.Connection) -> None:
+    """Create, migrate, then RECONCILE the zone table against the active site.
+
+    WHY RECONCILE AND NOT JUST INSERT OR IGNORE. The database lives in the
+    `alert-data` volume and survives `compose down`, so switching SITE_KEY on a
+    machine that has run the other site leaves that site's zones sitting in the
+    table. Old incidents then point at zone ids that are no longer seeded,
+    `get_zone` returns None, `zone_json(None)` raises, and /api/state answers 500.
+
+    That failure is almost invisible from the outside: the phone's `refresh()`
+    swallows the exception by design so a dead backend does not blank the screen,
+    which means the app goes on showing stale data indefinitely with no error
+    anywhere. Hence: update the rows that survive, delete the ones that do not.
+
+    Updating rather than replacing keeps `status` and `last_scan_at`, so a
+    restart mid-incident does not reset a burning zone to clear.
+    """
     await db.executescript(_SCHEMA)
     await _migrate(db)
-    # Seed the 7 zones if they don't already exist (preserves status across restarts).
     now = _utcnow()
     for z in ZONES:
         await db.execute(
-            """INSERT OR IGNORE INTO zones (id, name, floor, detector_id, status, last_scan_at, glyph)
-               VALUES (?, ?, ?, ?, 'clear', ?, ?)""",
+            """INSERT INTO zones (id, name, floor, detector_id, status, last_scan_at, glyph)
+                    VALUES (?, ?, ?, ?, 'clear', ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    floor = excluded.floor,
+                    detector_id = excluded.detector_id,
+                    glyph = excluded.glyph""",
             (z["id"], z["name"], z["floor"], z["detector_id"], now, z["glyph"]),
         )
+    keep = [z["id"] for z in ZONES]
+    placeholders = ",".join("?" * len(keep))
+    async with db.execute(
+        f"SELECT id FROM zones WHERE id NOT IN ({placeholders})", keep
+    ) as cur:
+        stale = [r["id"] for r in await cur.fetchall()]
+    if stale:
+        log.warning("Removing %d zone(s) left by a previous site: %s",
+                    len(stale), ", ".join(stale))
+        await db.execute(
+            f"DELETE FROM zones WHERE id NOT IN ({placeholders})", keep)
     await db.commit()
 
 
@@ -174,34 +264,42 @@ async def set_zone_status(db, zone_id: str, status: str, last_scan_at: str | Non
 # ── Incidents ────────────────────────────────────────────────────────────────
 
 async def create_incident(db, incident_id, zone_id, det_type, confidence, description,
-                          detected_at, occupancy=None, severity="fire") -> dict:
+                          detected_at, occupancy=None, severity="fire",
+                          verification="confirmed", sensor_summary=None) -> dict:
     now = _utcnow()
     await db.execute(
         """INSERT INTO incidents
              (id, zone_id, type, confidence, description, detected_at, status,
               created_at, resolved_at, resolution, last_event_at, muster_present, muster_total,
-              occupancy_current, occupancy_peak, severity)
-           VALUES (?, ?, ?, ?, ?, ?, 'active', ?, NULL, NULL, ?, ?, ?, ?, ?, ?)""",
+              occupancy_current, occupancy_peak, severity, verification, sensor_summary)
+           VALUES (?, ?, ?, ?, ?, ?, 'active', ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (incident_id, zone_id, det_type, confidence, description, detected_at,
          now, now, DEFAULT_MUSTER_PRESENT, DEFAULT_MUSTER_TOTAL, occupancy, occupancy,
-         severity),
+         severity, verification, sensor_summary),
     )
     await db.commit()
     return await get_incident(db, incident_id)
 
 
 async def escalate_incident(db, incident_id, det_type, confidence, description,
-                            detected_at, occupancy=None) -> dict:
-    """Raise a warning to a full fire, in place.
+                            detected_at, occupancy=None, severity="fire",
+                            verification="confirmed") -> dict:
+    """Raise a warning to a full alarm, in place.
 
     The gas that opened the warning and the flame the camera now sees are the
     same fire -- the sensors were simply slower. Opening a second incident
     would show the responder two fires in one room and start a second muster.
+
+    `severity` is a parameter rather than a hard-coded 'fire' because a warning
+    can escalate two ways. A flame on camera makes it a fire; the same gas
+    simply getting worse makes it tier 1b, GAS DANGER -- an alarm with nothing
+    visible. Writing 'fire' for the second case would assert a flame nobody saw.
     """
     now = _utcnow()
     await db.execute(
         """UPDATE incidents
-             SET severity = 'fire',
+             SET severity = ?,
+                 verification = ?,
                  type = ?,
                  confidence = MAX(confidence, ?),
                  description = ?,
@@ -213,7 +311,7 @@ async def escalate_incident(db, incident_id, det_type, confidence, description,
                      ELSE MAX(COALESCE(occupancy_peak, 0), ?)
                  END
            WHERE id = ?""",
-        (det_type, confidence, description, detected_at, now,
+        (severity, verification, det_type, confidence, description, detected_at, now,
          occupancy, occupancy, occupancy, incident_id),
     )
     await db.commit()
@@ -283,6 +381,15 @@ async def get_last_resolved_for_zone(db, zone_id: str) -> dict | None:
         return dict(r) if r else None
 
 
+async def get_all_incidents(db, limit: int = 200) -> list[dict]:
+    """Every incident, newest first — the analysis reads resolved and live alike."""
+    async with db.execute(
+        "SELECT * FROM incidents ORDER BY COALESCE(resolved_at, detected_at) DESC LIMIT ?",
+        (limit,),
+    ) as cur:
+        return [dict(r) for r in await cur.fetchall()]
+
+
 async def get_resolved_incidents(db, limit: int = 50) -> list[dict]:
     async with db.execute(
         "SELECT * FROM incidents WHERE status = 'resolved' ORDER BY resolved_at DESC LIMIT ?",
@@ -328,6 +435,34 @@ async def resolve_incident(db, incident_id: str, resolution: str) -> None:
     await db.execute(
         "UPDATE incidents SET status = 'resolved', resolved_at = ?, resolution = ? WHERE id = ?",
         (_utcnow(), resolution, incident_id),
+    )
+    await db.commit()
+
+
+async def set_incident_route(db, incident_id: str, record: dict, blocked: dict,
+                             latency_ms: float | None) -> None:
+    """Attach a generated route to an incident. Clears any previous route_error."""
+    await db.execute(
+        """UPDATE incidents
+             SET route_json = ?, route_blocked_json = ?, route_exit_id = ?,
+                 route_refuge = ?, route_length_m = ?, route_generation_ms = ?,
+                 route_latency_ms = ?, route_generated_at = ?, route_site_key = ?,
+                 route_plan_revision = ?, route_error = NULL
+           WHERE id = ?""",
+        (json.dumps(record), json.dumps(blocked), record.get("exitId"),
+         1 if record.get("status") == "refuge" else 0, record.get("lengthM"),
+         record.get("generatedInMs"), latency_ms, _utcnow(),
+         record.get("siteKey"), record.get("planRevision"), incident_id),
+    )
+    await db.commit()
+
+
+async def set_incident_route_error(db, incident_id: str, error: str) -> None:
+    """Record WHY there is no route. A blank field would read as "not tried yet",
+    and the analysis would quietly drop the case from its denominator."""
+    await db.execute(
+        "UPDATE incidents SET route_error = ?, route_generated_at = ? WHERE id = ?",
+        (error, _utcnow(), incident_id),
     )
     await db.commit()
 
