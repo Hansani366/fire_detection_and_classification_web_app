@@ -214,6 +214,166 @@ Note also that the synthetic muster constants the prototype shipped with (42 of 
 longer used once real check-outs exist. If any earlier screenshot in the thesis shows
 those numbers, it predates this and should be retaken.
 
+---
+
+## 11. Ch. 1 RO1.1 — MQTT at 1 Hz, which nothing implements
+
+**As written:** the sensor node "publishes synchronised readings over **MQTT** at a fixed
+interval of **one second**".
+
+**What exists:** no MQTT anywhere. The whole repository was searched for `mqtt`, `paho` and
+`mosquitto` — zero matches, in code, in `requirements.txt` and in `docker-compose.yml`.
+Nodes POST JSON over HTTP roughly every three seconds, which is also what §3.3.3 describes
+("one JSON message pushed over HTTP to the sensor service", "a fixed interval of about
+three seconds"). So Chapter 1 contradicts Chapter 3 as well as the artefact.
+
+**Change to make.** Correct RO1.1 to specify **HTTP JSON transmission approximately every
+three seconds**. No MQTT broker is needed or used.
+
+> RO1.1: To design and build an ESP32 based multi sensor node that measures combustible
+> gas, carbon monoxide, temperature, humidity and flame radiation, and that publishes
+> readings as JSON over HTTP at an interval of approximately three seconds.
+
+Two knock-on edits: drop "synchronised" (the node has no clock — §3.3.3 says the server
+adds the wall-clock time on arrival), and check §3.4.6, which already correctly notes that
+the time before arrival cannot be measured.
+
+---
+
+## 12. Ch. 1 RO1.2 — an indoor industrial test set that does not exist
+
+**As written:** mAP@0.5 of at least 0.85 "on a held out **indoor industrial** test set".
+
+**What exists:** §3.3.2 states plainly that no industrial imagery could be obtained — the
+team had no access to industrial premises, real fires could not be created safely in a
+working plant, and companies would not share footage. Both detectors are trained and tested
+on public data: HomeFire for fire and smoke, CrowdHuman for people. The controlled fire
+trials happened inside a home (§3.3.5).
+
+**Change to make.** Correct RO1.2 to describe **public-dataset evaluation on HomeFire and
+CrowdHuman, reported separately from the controlled fire testing carried out inside a
+home**, and report the actual mAP figures with the conditions they were measured under.
+
+> RO1.2: To train and optimise a YOLO model for the detection and classification of fire
+> and smoke, evaluated on the held-out test split of the HomeFire dataset, and to report
+> its performance separately from the controlled fire trials conducted in a domestic
+> setting.
+
+Keep the 0.85 target only if the measured figure supports it; §3.4.3 already commits to
+reporting per-class results, and smoke is usually the weaker class and the one that appears
+first.
+
+---
+
+## 13. Ch. 1 RO3.2 — wet chemical and Class F are not covered
+
+**As written:** the recommendation mechanism covers "water, foam, carbon dioxide, dry powder
+and **wet chemical** agents" — five agents.
+
+**What exists:** three fuel classes (A, B, C) in `alert-service/extinguishers.py`, covering
+water, foam, CO₂ and dry powder. The table documents the gap itself: it has no Class F and
+will report a chip-pan fire as liquid fuel.
+
+**Change to make.** Revise RO3.2 to the agents actually supported, and document the excluded
+scenarios explicitly rather than leaving them implied.
+
+> RO3.2: To develop a recommendation mechanism that maps the classified fire type to an
+> appropriate extinguishing agent across water, foam, carbon dioxide and dry powder, and to
+> assess the accuracy of these recommendations against ISO 3941 across all tested fire
+> materials. Cooking-oil fires (Class F, requiring wet chemical) and electrical fires are
+> outside the classifier's scope and are excluded; Section 3.4.10 records the consequence.
+
+The exclusions to state, in the limitations as well as the objective:
+
+- **Cooking oil / Class F.** No wet chemical agent. A chip-pan fire is reported as liquid
+  fuel, and the guidance that follows is wrong for it.
+- **Electrical fires.** The model cannot see whether equipment is live, which changes the
+  correct agent whatever is burning. `/api/extinguishers` already returns this under
+  `modelLimits` — the thesis should say it too.
+
+---
+
+## 14. Ch. 1 RO3.4 — expert evaluation — **TODO, not software**
+
+**Status: outstanding.** This is the one objective no amount of development satisfies.
+
+Everything RO3.4 needs from the artefact now exists: Presentation B (the situation report,
+the head-count, the generated evacuation route, the fuel class and the fire-fighting
+guidance) can be shown in full. What remains is the research activity.
+
+- [ ] Recruit participants. Note the unresolved count — Ch. 1 says at least **eight**,
+      §3.3.8 targets **five** (see §7 above). Fix the number before recruiting, not after.
+- [ ] Prepare the three recorded incident scenarios, each in both presentations.
+- [ ] Obtain ethical approval sign-off, information sheets and consent forms.
+- [ ] Run the sessions to the written script, alternating presentation order.
+- [ ] Analyse: Likert medians and frequencies, Wilcoxon signed rank paired comparison, and
+      the six-phase thematic analysis of the open questions.
+- [ ] Retain the code book and coded extracts as the audit trail (§3.4.9).
+
+**Track this separately from software development.** It is on the critical path to
+submission and it has a lead time that writing code does not — recruitment and ethics are
+other people's calendars.
+
+---
+
+## 15. §3.4.7 — the grounding check now runs **inside** the system (RO3.1, built)
+
+This is the one entry where the software moved rather than the prose, and §3.4.7 has to
+move with it.
+
+**As written:**
+
+> The check is carried out during the analysis, and **it is not a step inside the running
+> system**.
+
+**What was built.** RO3.1 requires that "every generated claim is validated against the
+logged detection and sensor evidence **before release**", which an after-the-fact analysis
+cannot satisfy — it measures how often the model hallucinates without doing anything about
+it at the moment it matters. So Table 3.20's three categories are now applied at release
+time, in `alert-service/report.py`:
+
+| Claim | Checked against | Source |
+|---|---|---|
+| Burning material | the fuel classifier's verdict | `fire-classification-service` |
+| Location | the stored zone model | never generated — system-supplied |
+| Approximate size | largest fire box as a share of the frame | fire YOLO |
+| Smoke characteristics | smoke boxes, and the graded gas channel | fire YOLO + sensors |
+| Presence of any person | the head-count | human YOLO |
+
+**The release rule**, which is the part to state:
+
+- **Contradicted** → withheld. It never reaches the phone. A report saying nobody is present
+  while the human detector counts three is not a nuance, and a responder acting on it
+  decides worse than one told nothing.
+- **Unsupported** → released, but **marked "unverified"** on screen. Dropping these would
+  strip out most of the report's content — smoke colour is useful and no sensor observes it
+  — but presenting them as findings is exactly the hallucination risk Table 3.20 names.
+- **Supported** → released plainly.
+
+**Change to make.** Replace the sentence above with:
+
+> The check is carried out twice, and the two serve different purposes. At **release time**
+> it is a control: every claim is graded against the logged evidence before the report
+> reaches a responder, contradicted claims are withheld and unsupported claims are marked.
+> During **analysis** the same grading is recomputed over the stored reports to produce the
+> grounding accuracy and hallucination rate, which are properties of the model rather than
+> of any one incident.
+
+Two consequences worth stating with the results:
+
+1. **Grounding accuracy is now reported per incident as well as in aggregate.** Every
+   stored report carries its own claim count, supported count and the two rates.
+2. **The hallucination rate measured in analysis is the rate *before* filtering.** The rate
+   a responder is exposed to is lower, because contradicted claims were removed. Report
+   both and say which is which — conflating them would credit the model for a control the
+   system provides.
+
+**Section 3.2.5.3 also needs a line.** It currently describes the VLM returning three fields
+(`detected`, `type`, `description`, Table 3.10). A second, separate prompt now returns the
+five report elements, called once when a fire is confirmed rather than on the detection
+loop. Table 3.10 stays correct for the verification stage; the report stage needs its own
+short table.
+
 ## Figures and tables to regenerate
 
 - **Figure of the facility graph** (§3.3.7) — should now show 8 zones, 2 exits,

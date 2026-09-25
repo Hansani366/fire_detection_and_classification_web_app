@@ -128,6 +128,30 @@ async def proxy_describe(file: UploadFile = File(...)):
         raise HTTPException(status_code=502, detail=f"VLM service unreachable: {exc}")
 
 
+@app.post("/api/describe-scene")
+async def proxy_describe_scene(file: UploadFile = File(...)):
+    """Forward a frame to the VLM's structured situation-report endpoint (RO3.1).
+
+    Separate from /api/describe because the two answer different questions and
+    are called at different moments: /api/describe runs on the detection loop and
+    decides the alarm, this runs once when a fire is confirmed and produces the
+    description a responder reads. Sharing an endpoint would make every detection
+    frame pay for the longer prompt.
+    """
+    data = await file.read()
+    try:
+        async with httpx.AsyncClient(timeout=VLM_TIMEOUT) as client:
+            resp = await client.post(
+                GEMINI_URL.replace("/describe-image/", "/describe-scene/"),
+                files={"file": ("frame.jpg", data, "image/jpeg")},
+            )
+        return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="VLM service timed out")
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail=f"VLM service unreachable: {exc}")
+
+
 @app.post("/api/warn")
 async def proxy_warn(body: dict):
     """Tier 1a: turn sensor readings into a plain-language warning.

@@ -1555,6 +1555,36 @@ async function callVlm(blob) {
 /* Report a confirmed fire to alert-service (which pushes the mobile app).
    Fired once on the rising edge of the alarm; reset when the hold expires. */
 async function reportFire(vlm) {
+  /* Evidence for the situation report's grounding check (RO3.1).
+
+     These are the LOGGED OBSERVATIONS a generated claim gets checked against, so
+     they are measured off the same frame the description is written from. Box
+     coordinates are native-frame pixels, which is why the area ratio divides by
+     the offscreen canvas and not the display canvas -- the display is letterboxed
+     and would inflate the ratio on any non-matching aspect. */
+  function sceneEvidence() {
+    const dets = S.lastDetections || [];
+    const area = offscreen.width * offscreen.height;
+    let biggest = 0, smokeBoxes = 0;
+    dets.forEach(d => {
+      const [x1, y1, x2, y2] = d.box;
+      const a = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+      const label = (d.label || '').toLowerCase();
+      if (label.includes('smoke')) smokeBoxes++;
+      if (label.includes('fire') || label.includes('flame')) {
+        biggest = Math.max(biggest, a);
+      }
+    });
+    const sensors = Escalation.state ? Escalation.state() : {};
+    return {
+      fireAreaRatio: area > 0 ? +(biggest / area).toFixed(4) : null,
+      smokeBoxes: smokeBoxes,
+      fireBoxes: dets.filter(d => !(d.label || '').toLowerCase().includes('smoke')).length,
+      gasLevel: sensors.sensorLevel || null,
+      occupancy: S.occNow,
+    };
+  }
+
   const conf = S.lastDetections.length
     ? Math.max(...S.lastDetections.map(d => d.confidence))
     : MIN_CONF;
@@ -1691,6 +1721,7 @@ async function detectOnce() {
             vlmAvailable: true,
             vlm: vlm,
             occupancy: S.occNow,
+            evidence: sceneEvidence(),
           });
 
           render();
@@ -1708,7 +1739,7 @@ async function detectOnce() {
           // VLM meant no alarm could ever fire, however obvious the fire.
           Escalation.onVision({
             yoloHit: true, vlmConfirmed: false, vlmAvailable: false,
-            vlm: null, occupancy: S.occNow,
+            vlm: null, occupancy: S.occNow, evidence: sceneEvidence(),
           });
           render();
         })
@@ -1729,7 +1760,8 @@ async function detectOnce() {
          service is up. Omit the flag rather than asserting health we did not
          test -- see Escalation.onVision. */
       Escalation.onVision({ yoloHit: false, vlmConfirmed: false,
-                            vlm: null, occupancy: S.occNow });
+                            vlm: null, occupancy: S.occNow,
+                            evidence: sceneEvidence() });
       S.lastDetections = [];
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }

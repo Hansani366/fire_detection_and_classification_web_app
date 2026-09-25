@@ -53,6 +53,15 @@ class FireEventIn(BaseModel):
     # 'confirmed' for the same backwards-compatibility reason. 'unavailable'
     # means the alarm stands on detection evidence alone.
     verification: str | None = "confirmed"
+    # The structured scene description from /describe-scene/ (RO3.1). Every field
+    # in here is a CLAIM, not a finding: none of it is released until report.py
+    # has checked it against `evidence` below.
+    scene: dict | None = None
+    # What the detectors and sensors logged for the same moment, which is what
+    # those claims get checked against. Optional, and an absent source makes a
+    # claim unsupported rather than failing the request -- a report that cannot
+    # be fully checked is still worth more than no report.
+    evidence: dict | None = None
 
 
 class WarningIn(BaseModel):
@@ -472,6 +481,7 @@ async def report_fire(body: FireEventIn):
     return await intake.handle_confirmed_fire(
         _db(), body.zoneId, body.type, body.confidence, body.description, body.detectedAt,
         occupancy=body.occupancy, severity=severity, verification=verification,
+        scene=body.scene, evidence=body.evidence,
     )
 
 

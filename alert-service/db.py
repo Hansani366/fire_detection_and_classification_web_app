@@ -184,7 +184,12 @@ CREATE TABLE IF NOT EXISTS incidents (
     route_generated_at  TEXT,
     route_site_key      TEXT,
     route_plan_revision TEXT,
-    route_error         TEXT    -- why there is no route; never a silent blank
+    route_error         TEXT,   -- why there is no route; never a silent blank
+    -- The situation report (RO3.1), stored AFTER its claims were checked against
+    -- the detector and sensor evidence. What is kept is the graded claim list,
+    -- not the model's raw answer: the point of the record is that a reader can
+    -- see which statements were confirmed, which were withheld, and why.
+    situation_report TEXT
 );
 """
 
@@ -212,6 +217,7 @@ _ADDED_COLUMNS = (
     ("route_site_key", "TEXT"),
     ("route_plan_revision", "TEXT"),
     ("route_error", "TEXT"),
+    ("situation_report", "TEXT"),
 )
 
 
@@ -515,6 +521,15 @@ async def set_incident_route(db, incident_id: str, record: dict, blocked: dict,
          1 if record.get("status") == "refuge" else 0, record.get("lengthM"),
          record.get("generatedInMs"), latency_ms, _utcnow(),
          record.get("siteKey"), record.get("planRevision"), incident_id),
+    )
+    await db.commit()
+
+
+async def set_situation_report(db, incident_id: str, report: dict) -> None:
+    """Store the validated situation report against an incident."""
+    await db.execute(
+        "UPDATE incidents SET situation_report = ? WHERE id = ?",
+        (json.dumps(report), incident_id),
     )
     await db.commit()
 

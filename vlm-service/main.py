@@ -299,3 +299,96 @@ async def describe_image_detailed(file: UploadFile = File(...)):
     except Exception:
         logger.exception("VLM detailed inference failed")
         raise HTTPException(status_code=500, detail="VLM inference failed")
+
+# ── Situation-report prompt (RO3.1) ──────────────────────────────────────────
+# A THIRD PROMPT, for the same reason there is a second one. /describe-image/
+# must keep returning exactly {description, detected, type} because the live
+# alarm depends on that shape, and /describe-image-detailed/ returns numeric
+# observables for the fusion model. This one asks for the five things a
+# responder is told: what is burning, where, how big, what the smoke is doing,
+# and whether anyone is in shot.
+#
+# WHY IT MAY REFUSE TO ANSWER. Every field is allowed to be null, and the prompt
+# says so twice. A report is only useful if its claims can be checked, and a
+# model that guesses at the fuel because it was asked to name one produces a
+# claim that is unsupported rather than wrong -- which is harder to catch and
+# lands in the responder's hands looking identical to a real observation. An
+# explicit "I cannot see this" is worth more than a plausible sentence.
+#
+# NOTHING HERE IS TRUSTED. Every field this returns is checked against detector
+# and sensor evidence in alert-service/report.py before any of it is released.
+SCENE_PROMPT = """You are a fire-scene analyst writing a situation report for a responder.
+
+Report ONLY what is visible in this image. Every field may be null. Use null
+whenever you cannot see something clearly -- that is the correct answer, and it
+is far better than a guess. You are not being asked to be complete.
+
+Respond ONLY with a single JSON object, no markdown and no extra text:
+
+{
+  "material": "<what is burning, in three words or fewer, or null>",
+  "materialFamily": "<one of: solid, liquid, gas, unknown>",
+  "sizeBand": "<one of: small, moderate, large, or null>",
+  "sizeNote": "<a few words on the extent of the flames, or null>",
+  "smokePresent": <true, false or null>,
+  "smokeColour": "<one of: white, grey, black, brown, or null>",
+  "smokeDensity": "<one of: light, moderate, thick, or null>",
+  "peopleVisible": <true, false or null>,
+  "peopleCount": <an integer, or null>,
+  "description": "<one plain sentence a responder can act on>"
+}
+
+Guidance:
+- "small" is a flame you could cover with a hand; "large" reaches the ceiling or
+  spans more than about a third of the frame.
+- A lamp, a torch, a camera flash, a heater element or a phone screen is NOT
+  fire. If that is what you see, set material to null and say so in description.
+- Count only people you can actually see. Do not infer from context.
+- Do not name a fuel you cannot see. "Unknown" is a legitimate report."""
+
+
+@app.post("/describe-scene/")
+async def describe_scene(file: UploadFile = File(...)):
+    """The structured situation report (RO3.1), before validation.
+
+    Deliberately returns the model's claims unfiltered and unmerged with any
+    other evidence. The grounding check belongs in alert-service, where the
+    detector output and the sensor readings actually live -- putting it here
+    would mean this service marking its own homework.
+    """
+    started = time.perf_counter()
+    empty = {
+        "material": None, "materialFamily": "unknown", "sizeBand": None,
+        "sizeNote": None, "smokePresent": None, "smokeColour": None,
+        "smokeDensity": None, "peopleVisible": None, "peopleCount": None,
+        "description": "",
+    }
+    try:
+        image_bytes = await file.read()
+        response = llm.invoke([_image_message(SCENE_PROMPT, image_bytes)])
+        parsed = json.loads(_strip_fences(response.content))
+
+        out = {k: parsed.get(k, empty[k]) for k in empty}
+        # A count without a sighting is not a count.
+        if out["peopleVisible"] is not True:
+            out["peopleCount"] = out["peopleCount"] if out["peopleVisible"] is True else None
+        logger.info("VLM scene: material=%s size=%s smoke=%s people=%s",
+                    out["material"], out["sizeBand"], out["smokePresent"],
+                    out["peopleCount"])
+        return {**out, "parsed": True,
+                "latency_ms": round((time.perf_counter() - started) * 1000)}
+
+    except json.JSONDecodeError as e:
+        # Same rule as /describe-image/: an error is not an observation. A
+        # report built from an unparseable answer would present the model's
+        # silence as a set of null findings.
+        logger.warning("VLM scene returned non-JSON: %s | error: %s",
+                       response.content[:200], e)
+        raise HTTPException(status_code=502, detail="VLM returned unparseable output")
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        logger.exception("VLM scene inference failed")
+        raise HTTPException(status_code=500, detail="VLM inference failed")

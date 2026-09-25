@@ -226,6 +226,23 @@ def delivery_stats(rows: list[dict]) -> dict:
     }
 
 
+def situation_report_json(inc: dict) -> dict | None:
+    """The validated situation report (RO3.1), or None if there is none.
+
+    What is served is the graded claim list, not the model's raw answer. A client
+    can render the released text on its own, but the categories are there so it
+    can mark the unsupported claims rather than presenting everything as equally
+    solid -- which is the whole reason the check happens before release.
+    """
+    raw = inc.get("situation_report")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def incident_json(inc: dict, zone: dict, checked_out: int = 0) -> dict:
     return {
         "id": inc["id"],
@@ -252,6 +269,7 @@ def incident_json(inc: dict, zone: dict, checked_out: int = 0) -> dict:
         "classification": classification_json(inc),
         "route": route_json(inc),
         "checkout": checkout_json(inc, checked_out),
+        "situationReport": situation_report_json(inc),
     }
 
 
@@ -377,6 +395,7 @@ def report_json(inc: dict, zone: dict, checked_out: int = 0,
         "muster": muster_json(inc),
         "checkout": checkout_json(inc, checked_out),
         "delivery": delivery_stats(deliveries or []),
+        "situationReport": situation_report_json(inc),
         "route": route_json(inc),
         "routeLatencyMs": inc.get("route_latency_ms"),
         "routeError": inc.get("route_error"),

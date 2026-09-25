@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import db as store
 import fcm
+import report as situation
 import routing
 import sites
 from zones_seed import DEFAULT_ZONE_ID, ZONES_BY_ID
@@ -48,6 +49,37 @@ def _route_for_push(inc: dict | None) -> dict | None:
         return None
     import serializers as ser  # local: avoids a cycle at module import
     return ser.route_json(inc)
+
+
+async def _attach_report(db, incident_id: str, zone_id: str,
+                         scene: dict | None, evidence: dict | None) -> None:
+    """Grade the scene description and store what survives (RO3.1).
+
+    The evidence the claims are checked against is assembled here rather than
+    taken on trust from the caller: occupancy and the fuel verdict are read back
+    off the incident row, because those are the numbers the rest of the system
+    acts on. A caller that reported a different head-count from the one stored
+    against the incident would otherwise be allowed to validate a claim against
+    its own copy.
+
+    Wrapped, like routing: a report is what the responder reads, but the alarm is
+    what makes them look.
+    """
+    if not scene:
+        return
+    try:
+        inc = await store.get_incident(db, incident_id)
+        zone = ZONES_BY_ID.get(zone_id, {"id": zone_id, "name": zone_id})
+        ev = dict(evidence or {})
+        ev.setdefault("occupancy", (inc or {}).get("occupancy_current"))
+        ev.setdefault("fuelType", (inc or {}).get("fuel_type"))
+        built = situation.build(scene, ev, zone)
+        await store.set_situation_report(db, incident_id, built)
+        g = built["grounding"]
+        log.info("Report for %s: %d claims, %d supported, %d withheld.",
+                 incident_id, g["claims"], g["supported"], g["contradicted"])
+    except Exception as exc:  # noqa: BLE001
+        log.error("Situation report failed for %s: %s", incident_id, exc)
 
 
 async def _attach_route(db, incident_id: str, zone_id: str, detected_at: str) -> None:
@@ -92,7 +124,7 @@ async def _attach_route(db, incident_id: str, zone_id: str, detected_at: str) ->
 
 async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, detected_at,
                                 force=False, occupancy=None, severity="fire",
-                                verification="confirmed") -> dict:
+                                verification="confirmed", scene=None, evidence=None) -> dict:
     """
     Called on every confirmed-fire event. Returns {"incidentId", "created"}.
     De-dupes: repeat events for an already-active incident refresh it silently;
@@ -107,6 +139,11 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
     tier 1b ('gas_danger', dangerous gas with nothing visible). Both alarm and
     both ride the fire channel — a camera cannot see carbon monoxide, so tier 1b
     has to be loud — but only one of them should claim a flame was seen.
+
+    `scene` and `evidence` are the raw material for the situation report: the
+    model's structured claims, and what the detectors and sensors logged for the
+    same moment. Nothing from `scene` reaches a responder until report.py has
+    graded it against `evidence` -- see _attach_report.
 
     `verification` records whether the vision-language model was reachable. It is
     stored rather than inferred, because 'unavailable' is not a rejection: per
@@ -140,6 +177,7 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
             await store.set_zone_status(db, zone_id, _zone_status_for(det_type))
             # A warning carries no route (nothing is burning). Now something is.
             await _attach_route(db, active["id"], zone_id, detected_at)
+            await _attach_report(db, active["id"], zone_id, scene, evidence)
             log.info("Escalated warning %s to fire (zone %s).", active["id"], zone_id)
             escalated = await store.get_incident(db, active["id"])
         elif active:
@@ -190,6 +228,7 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
                                           severity=severity, verification=verification)
         await store.set_zone_status(db, zone_id, _zone_status_for(det_type))
         await _attach_route(db, incident_id, zone_id, detected_at)
+        await _attach_report(db, incident_id, zone_id, scene, evidence)
         log.info("New incident %s in zone %s (type=%s conf=%.2f occupancy=%s).",
                  incident_id, zone_id, det_type, confidence,
                  "unknown" if occupancy is None else occupancy)

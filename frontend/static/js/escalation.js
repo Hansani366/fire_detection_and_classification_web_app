@@ -53,7 +53,7 @@
     // vision, pushed in by the detection loop
     yoloHit: false, vlmConfirmed: false, vlmAvailable: true, vlm: null, occupancy: null,
     // outputs
-    tier: 'clear', alarm: false, reported: false,
+    tier: 'clear', alarm: false, reported: false, evidence: null,
     warningSentAt: 0, warningText: '',
     classification: null, classifySentFor: null,
     session: null, classifyTimer: null, classifyBusy: false,
@@ -130,6 +130,10 @@
     if (v.vlmAvailable !== undefined) S.vlmAvailable = v.vlmAvailable !== false;
     S.vlm = v.vlm || null;
     if (v.occupancy !== undefined) S.occupancy = v.occupancy;
+    // Detector evidence for the situation report's grounding check. Captured on
+    // every vision tick so the frame the report describes and the frame its
+    // claims are checked against are the same frame.
+    if (v.evidence !== undefined) S.evidence = v.evidence;
     evaluate();
   }
 
@@ -207,6 +211,29 @@
       : (vlm.description || 'Fire or smoke confirmed on camera.') +
         (S.vlmAvailable ? '' : ' (VLM unavailable — confirmed by camera and sensors.)');
 
+    /* THE SITUATION REPORT IS FETCHED ONCE, HERE, AND NOT ON THE DETECTION LOOP.
+       It answers a different question from the alarm -- what is burning, how big,
+       what the smoke is doing, who is in the room -- and a responder reads it
+       once. Asking for it every frame would pay for a long prompt 120 times a
+       minute to produce the same paragraph.
+
+       It is also deliberately NOT awaited before the event is posted. The alarm
+       must not wait on a description of itself; the report follows in a second
+       post and attaches to the incident that is already open. */
+    var evidence = S.evidence || {};
+    if (tier !== 'danger' && S.captureFrame) {
+      describeScene(function (scene) {
+        post('/api/events/fire', {
+          zoneId: S.zoneId, type: vlm.type || 'fire',
+          confidence: vlm.confidence || 0.9, description: description,
+          occupancy: S.occupancy, severity: 'fire',
+          verification: S.vlmAvailable ? (S.vlmConfirmed ? 'confirmed' : 'rejected')
+                                       : 'unavailable',
+          scene: scene, evidence: evidence,
+        }).catch(function (e) { console.warn('[escalation] scene report failed', e); });
+      });
+    }
+
     post('/api/events/fire', {
       zoneId: S.zoneId,
       type: tier === 'danger' ? 'smoke' : (vlm.type || 'fire'),
@@ -228,7 +255,26 @@
                   : !S.vlmAvailable   ? 'unavailable'
                   : S.vlmConfirmed    ? 'confirmed'
                                       : 'rejected',
+      /* Tier 1b has no image, so it has no scene to describe -- but the sensor
+         evidence still travels, so the report can say where and who. */
+      evidence: evidence,
     }).catch(function (e) { console.warn('[escalation] fire report failed', e); });
+  }
+
+  /* Ask the VLM for the structured scene description. Best effort: a failure
+     leaves the incident with no report, which is a thinner screen, not a
+     missing alarm. */
+  function describeScene(done) {
+    var blob = S.captureFrame && S.captureFrame();
+    if (!blob || !blob.then) return;
+    blob.then(function (b) {
+      if (!b) return;
+      var fd = new FormData();
+      fd.append('file', b, 'frame.jpg');
+      return fetch('/api/describe-scene', { method: 'POST', body: fd })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (scene) { if (scene) done(scene); });
+    }).catch(function (e) { console.warn('[escalation] describe-scene failed', e); });
   }
 
   function sendClear() {
@@ -344,7 +390,7 @@
       S.session = null;
     }
     S.tier = 'clear'; S.alarm = false; S.yoloHit = false;
-    S.vlmConfirmed = false; S.classification = null;
+    S.vlmConfirmed = false; S.classification = null; S.evidence = null;
     /* Reset the VLM health flag too. It is an observation about the last call,
        not a property of the session, and leaving it false across a stop/start
        made the next run confirm fires on the "VLM unreachable" branch while the

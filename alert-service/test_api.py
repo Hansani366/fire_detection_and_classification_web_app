@@ -56,6 +56,39 @@ def test_api_surface():
       check('checkout block present and empty', inc['checkout']['checkedOut'] == 0)
       check('allClear is false during a fire', st['allClear'] is False)
 
+      # --- situation report (RO3.1) ---------------------------------------
+      # A scene where one claim is confirmed, one cannot be checked, and one is
+      # flatly contradicted by the human detector.
+      c.post('/api/events/clear', json={'zoneId': 'fabric-store'})
+      time.sleep(1.6)
+      c.post('/api/events/fire', json={
+          'zoneId': 'dyeing', 'type': 'fire', 'confidence': 0.9,
+          'description': 'Flames.', 'occupancy': 3,
+          'scene': {'material': 'fabric rolls', 'materialFamily': 'solid',
+                    'sizeBand': 'small', 'smokePresent': True,
+                    'smokeColour': 'black', 'peopleVisible': False,
+                    'description': 'Open flames among the rolls.'},
+          'evidence': {'fireAreaRatio': 0.03, 'smokeBoxes': 2, 'gasLevel': 'warn'},
+      })
+      rep = c.get('/api/state').json()['activeIncident']['situationReport']
+      check('a situation report is generated', rep is not None)
+      ids = {cl['id']: cl['category'] for cl in rep['claims']}
+      check('location is system-supplied and supported', ids.get('location') == 'supported', ids)
+      check('smoke confirmed by the detector', ids.get('smoke') == 'supported', ids)
+      check('"nobody present" is contradicted by the head-count',
+            ids.get('people') == 'contradicted', ids)
+      check('the contradicted claim is withheld from the released text',
+            'people' not in rep['released'] and 'none visible' not in rep['text'], rep['text'])
+      check('grounding figures are computed', rep['grounding']['groundingAccuracy'] is not None)
+      check('the report announces it was validated before release',
+            rep['validatedBeforeRelease'] is True)
+      check('an unchecked material claim is marked, not dropped',
+            ids.get('material') == 'unsupported' and 'material' in rep['released'], ids)
+      c.post('/api/events/clear', json={'zoneId': 'dyeing'})
+      time.sleep(1.6)
+      r = c.post('/api/test-alert', json={'zoneId': 'fabric-store'}).json()
+      iid = r['incidentId']
+
       # --- check-out ------------------------------------------------------
       a = c.post(f'/api/incidents/{iid}/checkout', json={'token': 'tok_1'}).json()
       b = c.post(f'/api/incidents/{iid}/checkout', json={'token': 'tok_1'}).json()
@@ -92,7 +125,9 @@ def test_api_surface():
       check('report timeline is populated', len(rep['timeline']) >= 1)
 
       # --- warning tier ---------------------------------------------------
-      w = c.post('/api/test-alert', json={'zoneId': 'dyeing', 'severity': 'warning'}).json()
+      # A zone this test has not touched: a zone that recently cleared is inside
+      # the 120s cooldown, and handle_warning honours it.
+      w = c.post('/api/test-alert', json={'zoneId': 'warehouse', 'severity': 'warning'}).json()
       inc2 = c.get('/api/state').json()['activeIncident']
       check('a warning is severity=warning', inc2['severity'] == 'warning', inc2['severity'])
       check('a warning carries its readings', inc2['sensorSummary'] != '')
@@ -101,7 +136,7 @@ def test_api_surface():
             c.get('/api/state').json()['allClear'] is True)
 
       # --- gas danger -----------------------------------------------------
-      c.post('/api/events/clear', json={'zoneId': 'dyeing'})
+      c.post('/api/events/clear', json={'zoneId': 'warehouse'})
       time.sleep(1.6)
       c.post('/api/test-alert', json={'zoneId': 'boiler', 'severity': 'gas_danger'})
       inc3 = c.get('/api/state').json()['activeIncident']

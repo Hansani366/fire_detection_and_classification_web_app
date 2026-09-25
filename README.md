@@ -217,8 +217,15 @@ Two offline test suites, no Docker needed:
 ```bash
 cd alert-service
 python3 -m pytest test_routing.py -q   # the route scenarios, with hand-derived ground truth
+python3 -m pytest test_report.py -q    # the grounding check that runs before release
 python3 -m pytest test_api.py -q       # every endpoint over HTTP, in-process
 ```
+
+**Situation report.** When a fire is confirmed the dashboard asks the VLM for a structured
+scene description — material, size, smoke, people — and posts it with the detector and
+sensor evidence from the same frame. `alert-service/report.py` grades every claim against
+that evidence before releasing any of it: contradicted claims are withheld, unsupported
+claims are marked, and the phone renders the difference.
 
 **Configuration** (set in `docker-compose.yml`):
 
