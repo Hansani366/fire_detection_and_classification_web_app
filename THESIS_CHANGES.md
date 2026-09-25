@@ -155,18 +155,31 @@ but RO3.4 must then say five.
 
 ---
 
-## 8. Ch. 1 RO3.2 — extinguishing agents
+## 8. Ch. 1 RO3.2 — wet chemical and Class F are not covered
 
-**As written:** RO3.2 covers "water, foam, carbon dioxide, dry powder and wet chemical
-agents" — five agents.
+**As written:** the recommendation mechanism covers "water, foam, carbon dioxide, dry powder
+and **wet chemical** agents" — five agents.
 
-**What was built:** three fuel classes (A, B, C) in `alert-service/extinguishers.py`,
-covering water, foam, CO₂ and dry powder. There is **no class F and no wet chemical**,
-and the guidance table says so explicitly: a chip-pan fire is reported as liquid fuel.
+**What exists:** three fuel classes (A, B, C) in `alert-service/extinguishers.py`, covering
+water, foam, CO₂ and dry powder. The table documents the gap itself: it has no Class F and
+will report a chip-pan fire as liquid fuel.
 
-**Change to make.** Either drop wet chemical from RO3.2, or keep it and state the gap in
-§3.4.10 alongside the other limitations. The code already records the limitation
-honestly; the objective should not claim more than the table delivers.
+**Change to make.** Revise RO3.2 to the agents actually supported, and document the excluded
+scenarios explicitly rather than leaving them implied.
+
+> RO3.2: To develop a recommendation mechanism that maps the classified fire type to an
+> appropriate extinguishing agent across water, foam, carbon dioxide and dry powder, and to
+> assess the accuracy of these recommendations against ISO 3941 across all tested fire
+> materials. Cooking-oil fires (Class F, requiring wet chemical) and electrical fires are
+> outside the classifier's scope and are excluded; Section 3.4.10 records the consequence.
+
+The exclusions to state, in the limitations as well as the objective:
+
+- **Cooking oil / Class F.** No wet chemical agent. A chip-pan fire is reported as liquid
+  fuel, and the guidance that follows is wrong for it.
+- **Electrical fires.** The model cannot see whether equipment is live, which changes the
+  correct agent whatever is burning. `/api/extinguishers` already returns this under
+  `modelLimits` — the thesis should say it too.
 
 ---
 
@@ -265,31 +278,54 @@ first.
 
 ---
 
-## 13. Ch. 1 RO3.2 — wet chemical and Class F are not covered
+## 13. Ch. 1 RO1.4 and §3.2.4 — four configurations described, six built
 
-**As written:** the recommendation mechanism covers "water, foam, carbon dioxide, dry powder
-and **wet chemical** agents" — five agents.
+**As written**, in four places: RO1.4 compares "the vision only, sensor only, sensor and
+vision fusion, and full configuration with vision language model verification"; §3.2.4 says
+switching a layer off "makes it possible to compare the four configurations"; §3.3.5 says
+each scenario is observed by "all four system configurations"; and §3.3.6 repeats it for the
+nuisance runs.
 
-**What exists:** three fuel classes (A, B, C) in `alert-service/extinguishers.py`, covering
-water, foam, CO₂ and dry powder. The table documents the gap itself: it has no Class F and
-will report a chip-pan fire as liquid fuel.
+**What was built** — `ablation-service/constants.py`:
 
-**Change to make.** Revise RO3.2 to the agents actually supported, and document the excluded
-scenarios explicitly rather than leaving them implied.
+| | Combination |
+|---|---|
+| 1 | sensors only |
+| 2 | YOLO only |
+| 3 | VLM only |
+| 4 | sensors + YOLO |
+| 5 | VLM + YOLO |
+| 6 | sensors + YOLO + VLM |
 
-> RO3.2: To develop a recommendation mechanism that maps the classified fire type to an
-> appropriate extinguishing agent across water, foam, carbon dioxide and dry powder, and to
-> assess the accuracy of these recommendations against ISO 3941 across all tested fire
-> materials. Cooking-oil fires (Class F, requiring wet chemical) and electrical fires are
-> outside the classifier's scope and are excluded; Section 3.4.10 records the consequence.
+Six, not four — a superset rather than a shortfall, so the artefact does more than the
+thesis claims, which is the better direction to be wrong in.
 
-The exclusions to state, in the limitations as well as the objective:
+**But "vision only" is ambiguous, and that part is not cosmetic.** It could mean combination
+2 (the detector alone) or combination 5 (detector plus vision-language verification, still
+no sensors). Both hypotheses are stated against it:
 
-- **Cooking oil / Class F.** No wet chemical agent. A chip-pan fire is reported as liquid
-  fuel, and the guidance that follows is wrong for it.
-- **Electrical fires.** The model cannot see whether equipment is live, which changes the
-  correct agent whatever is burning. `/api/extinguishers` already returns this under
-  `modelLimits` — the thesis should say it too.
+> H1: The full system ... produces a lower false alarm rate on the nuisance test set than
+> **the vision only configuration**.
+>
+> H2: The sensor first trigger produces a shorter time to detection than **the vision only
+> configuration** for smouldering fires.
+
+Read against combination 2, H1 measures the sensors *and* the verification layer together.
+Read against combination 5, it isolates the sensors alone. Those are different hypotheses
+with different expected effects, and §3.4.4 commits to a McNemar test on paired runs — a
+test whose result cannot be interpreted until the pairing is named.
+
+**Change to make.** Say six, name them, and pin each hypothesis to numbered combinations:
+
+> The prototype supports six configurations, listed in Table X. This study reports
+> combination 1 (sensors only), combination 2 (detector only), combination 4 (sensors and
+> detector fused) and combination 6 (the full system). H1 compares combination 6 against
+> combination 5; H2 compares combination 4 against combination 2.
+
+Substitute whichever pairing you actually intend — the point is that a number appears rather
+than a phrase with two readings. `GET /api/ablation/config` renders each rule from the
+constants the code executes, so Chapter 4's table can be generated from the running system
+instead of transcribed.
 
 ---
 
@@ -399,11 +435,33 @@ incident (`detected_at` against `classified_at`, and `durations.fireToClassified
 incident report), so it could be a reported result rather than a number carried over from
 the build notes.
 
-**Section 3.2.5.3 also needs a line.** It currently describes the VLM returning three fields
-(`detected`, `type`, `description`, Table 3.10). A second, separate prompt now returns the
-five report elements, called once when a fire is confirmed rather than on the detection
-loop. Table 3.10 stays correct for the verification stage; the report stage needs its own
-short table.
+**Section 3.2.5.3 describes one prompt. There are now four.** It currently documents the VLM
+returning three fields (`detected`, `type`, `description`, Table 3.10), which remains correct
+for the verification stage and nothing else. The others are undocumented, and two of them
+carry results the thesis reports:
+
+| Prompt | Endpoint | Used by | Documented? |
+|---|---|---|---|
+| `FIRE_PROMPT` | `/describe-image/` | the live alarm (Algorithm 3) | §3.2.5.3, Table 3.10 |
+| `DETAILED_PROMPT` | `/describe-image-detailed/` | **the whole ablation study**, and the live fuel classifier | nowhere |
+| `SCENE_PROMPT` | `/describe-scene/` | the situation report (RO3.1) | nowhere |
+| `SENSOR_WARNING_PROMPT` | `/warn-from-sensors/` | **tier 1a's written warning** | nowhere |
+
+Two of those gaps matter beyond tidiness.
+
+`DETAILED_PROMPT` returns the eleven channels the fusion model consumes, so every ablation
+figure in Chapter 5 depends on it — yet §3.2.4 and §3.2.5.2 describe the vision-language
+layer purely in terms of the three-field verification answer. It also asks for **observables
+rather than a verdict**, on purpose: naming the fuel directly would hand the fusion model
+its own job and make combination 3 indistinguishable from combination 6. That is a design
+decision the ablation rests on and it should be in the text.
+
+`SENSOR_WARNING_PROMPT` produces the warning Table 3.6 and §3.2.3 describe as "a short
+written warning ... generated from the readings". §3.2.3 says the warning exists; nothing
+says a language model writes it, or that it is explicitly forbidden to mention fire or to
+tell anyone to evacuate.
+
+Give the report stage and the detailed stage a short table each, on the model of Table 3.10.
 
 ---
 
@@ -464,6 +522,41 @@ ablation arms read `DETAILED_PROMPT`, which has none. So "combination 6" in the 
 not the deployed full system, and adding the setting made them diverge further. Whichever
 path H1 is measured through determines which artefact the result describes. This needs a
 sentence in Chapter 4 either way.
+
+## Outstanding, and not an edit to anything
+
+Everything above is a correction to text that already exists. These are different — they are
+things the thesis needs that no amount of editing produces, listed here so the two kinds do
+not get confused with each other.
+
+**Chapters 4 and 5 are not written.** Only `chapter_1_and_2.docx` and `chapter_3.docx` exist.
+§3.6 already promises what Chapter 4 must contain — the tools and technologies, the
+architecture as built, the implementation steps for hardware, models, backend, dashboard and
+mobile application, and the evaluation protocol. Chapter 5 is where every analysis in §3.4
+is reported.
+
+**Five of the eight datasets have not been collected.** DS1 (HomeFire), DS2 (CrowdHuman) and
+DS3 (the CFAST synthetic set) are done — the trained weights and `fusion_model.joblib` exist,
+with checksums in `fire-classification-service/model/PROVENANCE.md`. The other five are
+primary data and exist only once the system is run:
+
+| | | |
+|---|---|---|
+| DS4 | Sensor readings during the trials | not collected |
+| DS5 | Controlled fire trial recordings | not collected — §3.3.5 wants ≥10 repetitions per scenario |
+| DS6 | Nuisance scenario recordings | not collected — this is H1 |
+| DS7 | Occupancy, route and check-out records | not collected |
+| DS8 | Expert evaluation responses | not collected — see §14 |
+
+Without DS4–DS8 there is no §3.4 analysis at all: no time to detection, no false alarm
+comparison, no Friedman test, no route validity rate, no head-count comparison, no Likert
+results.
+
+**The system has never been run end to end.** Everything is verified by automated tests and
+in-process HTTP. The Gemini prompts have never met a real image, FCM has never delivered a
+real push, and the home floor plan has never been rendered on a screen. One session with
+`docker compose up --build` and a phone answers all three, and should happen before the
+trials rather than during them.
 
 ## Figures and tables to regenerate
 
