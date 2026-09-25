@@ -246,9 +246,9 @@ def rule_text(manifest: dict) -> dict[int, dict]:
             "decided_by": "rule: the dashboard's deployed alarm logic",
             "rule": "alarm(2) now AND the held VLM verdict is confirmed",
             "score": "min(score(2), held score(3))",
-            "why": "This is verbatim the rule the live system already runs "
-                   "(_markdown/fire_alarm_logic.md): YOLO proposes, the VLM "
-                   "confirms, the verdict is held between invocations.",
+            "why": "This is verbatim the rule the live system already runs: "
+                   "YOLO proposes, the VLM confirms, and the verdict is held "
+                   "between invocations.",
         },
         6: {
             "name": COMBOS[6],
