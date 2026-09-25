@@ -230,6 +230,7 @@
           verification: S.vlmAvailable ? (S.vlmConfirmed ? 'confirmed' : 'rejected')
                                        : 'unavailable',
           scene: scene, evidence: evidence,
+          detectionMode: vlm.mode || null,
         }).catch(function (e) { console.warn('[escalation] scene report failed', e); });
       });
     }
@@ -258,6 +259,11 @@
       /* Tier 1b has no image, so it has no scene to describe -- but the sensor
          evidence still travels, so the report can say where and who. */
       evidence: evidence,
+      /* WHICH DEFINITION OF FIRE RAISED THIS. An incident opened under the home
+         demonstration setting, where a candle counts, is a different claim from
+         one opened in a working building. A record that does not say which
+         cannot be read back afterwards. */
+      detectionMode: vlm.mode || null,
     }).catch(function (e) { console.warn('[escalation] fire report failed', e); });
   }
 

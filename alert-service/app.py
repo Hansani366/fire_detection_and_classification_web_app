@@ -56,6 +56,9 @@ class FireEventIn(BaseModel):
     # The structured scene description from /describe-scene/ (RO3.1). Every field
     # in here is a CLAIM, not a finding: none of it is released until report.py
     # has checked it against `evidence` below.
+    # Which definition of fire raised this: 'industrial' or 'home'. Recorded,
+    # never acted on -- the arbitration already happened before this arrives.
+    detectionMode: str | None = None
     scene: dict | None = None
     # What the detectors and sensors logged for the same moment, which is what
     # those claims get checked against. Optional, and an absent source makes a
@@ -482,6 +485,7 @@ async def report_fire(body: FireEventIn):
         _db(), body.zoneId, body.type, body.confidence, body.description, body.detectedAt,
         occupancy=body.occupancy, severity=severity, verification=verification,
         scene=body.scene, evidence=body.evidence,
+        detection_mode=body.detectionMode,
     )
 
 

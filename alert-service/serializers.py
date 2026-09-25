@@ -270,6 +270,9 @@ def incident_json(inc: dict, zone: dict, checked_out: int = 0) -> dict:
         "route": route_json(inc),
         "checkout": checkout_json(inc, checked_out),
         "situationReport": situation_report_json(inc),
+        # Which definition of fire raised this. Null for records from before the
+        # setting existed, which is not the same as 'industrial'.
+        "detectionMode": inc.get("detection_mode"),
     }
 
 

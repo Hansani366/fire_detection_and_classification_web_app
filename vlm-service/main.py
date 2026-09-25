@@ -3,7 +3,7 @@ import json
 import base64
 import logging
 import time
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -33,13 +33,65 @@ llm = ChatGoogleGenerativeAI(
 )
 logger.info("VLM LLM initialised.")
 
+# WHY THE NUISANCE GUARD NAMES CATEGORIES, NOT THE TEST SET. The nuisance
+# battery (Section 3.3.6) uses household stand-ins: a kettle for process steam, a
+# shaken mat for dust, an orange lamp for a welding arc. Naming those exact props
+# here would make the false-alarm result a memory check rather than a measure of
+# whether the model can tell steam from smoke, and every figure it produced would
+# be optimistic. So the guard describes what each class of thing LOOKS like and
+# lets the props fall under it.
+#
+# WHY IT DESCRIBES BEHAVIOUR RATHER THAN SAYING "WHEN UNSURE, SAY NO". Smoke
+# usually appears before flame, and early smoke is pale -- a blanket bias toward
+# rejecting pale plumes would suppress exactly the early warning this system is
+# for. The discriminating cues are where the plume comes from and how it moves,
+# which separate steam and dust from smoke without punishing a real fire for
+# being young.
+#
 # Structured prompt — forces a JSON answer so the keyword check in app.py
 # only ever fires on an explicit positive detection, never on incidental
 # scene description language.
-FIRE_PROMPT = """You are a fire and smoke detection assistant.
+# ── What counts as a fire depends on the building ────────────────────────────
+# A candle on a table is a fire in a demonstration and an ordinary object in a
+# canteen. The same frame therefore has two correct answers, and the only thing
+# that settles it is where the camera is. The operator says which.
+#
+# WHY ONE SHARED BASE AND ONE SWAPPED CLAUSE, rather than two whole prompts. The
+# nuisance guard below is the other thing that moves a false-alarm rate, and if
+# it were duplicated the two modes could drift apart in ways nobody intended.
+# Then any difference measured between them would be a difference between two
+# prompts, not between two definitions of fire. One base guarantees the modes
+# differ in exactly one paragraph, which is a claim the thesis can make.
+#
+# INDUSTRIAL IS THE DEFAULT, and the asymmetry is deliberate. Defaulting to home
+# in a real building would alarm on every cigarette and pilot light. Defaulting
+# to industrial in a demonstration means the candle simply does not alarm --
+# which the person running the demonstration sees immediately. One failure is
+# silent and erodes trust in the alarm; the other is obvious and costs a click.
+FIRE_MODE_HOME = "home"
+FIRE_MODE_INDUSTRIAL = "industrial"
+
+_MODE_CLAUSE = {
+    FIRE_MODE_HOME: """THIS CAMERA IS IN A HOME, RUNNING A DEMONSTRATION. Any
+genuine sustained flame counts as fire here, however small and however
+deliberate: a candle, a lighter, a match, a burner, or a small fire in a tray.
+If it is really burning, report it.""",
+
+    FIRE_MODE_INDUSTRIAL: """THIS CAMERA IS IN A WORKING INDUSTRIAL BUILDING.
+Report fire only for an UNINTENDED one: material alight that should not be,
+flame spreading across a surface, or flame outside whatever was meant to contain
+it. A candle, a lighter, a match, a cigarette, a pilot light, a gas burner or a
+welding torch is a small controlled flame in normal use -- do NOT report those,
+unless something around them has caught and is burning on its own.""",
+}
+
+
+FIRE_PROMPT_BASE = """You are a fire and smoke detection assistant.
+
+{mode_clause}
 
 Carefully examine this image for any of the following:
-- visible fire or flames (open flame, candle flame, burning material)
+- visible fire or flames
 - smoke (any colour)
 - burning or charred objects
 - embers or glowing combustion
@@ -52,8 +104,40 @@ If fire/smoke IS detected:
 If fire/smoke is NOT detected:
 {"detected": false, "type": null, "description": null}
 
-Important: a bright light, camera flash, torch, LED, or phone screen is NOT fire.
+These are NOT fire and NOT smoke. Do not report them:
+
+- BRIGHT OR COLOURED LIGHT. A lamp, a torch, an LED, a camera flash, a phone or
+  monitor screen, sunlight, or the sparks of welding and grinding. Light has no
+  plume and leaves nothing behind.
+- STEAM, VAPOUR OR CONDENSATION. A white or pale plume from a kettle, a cooker,
+  a machine or a washing area. Steam is bright white, wispy at the edges, rises
+  fast and disperses cleanly. It carries no soot and darkens nothing around it.
+- AIRBORNE DUST. A pale, grainy cloud raised by sweeping, cutting or moving
+  goods. Dust drifts at low level, settles, and is stirred by movement rather
+  than rising from a source.
+- A HOT OBJECT THAT IS NOT BURNING. A heater element, an iron or a hotplate can
+  glow without any combustion.
+
+Real smoke is usually grey, brown or black rather than bright white; it hangs
+and layers instead of dispersing; and it rises from a source rather than being
+stirred up. Pale smoke does occur early in a fire, so judge it on where it comes
+from and how it behaves, not on colour alone.
+
 Only mark detected=true for actual combustion."""
+
+
+def fire_prompt(mode: str | None) -> tuple[str, str]:
+    """The verification prompt for a setting. Returns (prompt, resolved mode).
+
+    An unknown mode resolves to industrial rather than raising: a typo in a query
+    string must not take the alarm offline, and the quieter of the two settings
+    is the safe place to land.
+    """
+    resolved = mode if mode in _MODE_CLAUSE else FIRE_MODE_INDUSTRIAL
+    # Substitution by replace(), NOT str.format(): the prompt body contains the
+    # literal JSON braces the model must copy, and format() reads those as
+    # fields and raises KeyError on the first one.
+    return FIRE_PROMPT_BASE.replace("{mode_clause}", _MODE_CLAUSE[resolved]), resolved
 
 
 # ── Detailed prompt, for the ablation service ────────────────────────────────
@@ -209,10 +293,20 @@ async def warn_from_sensors(body: SensorWarningIn):
 
 
 @app.post("/describe-image/")
-async def describe_image(file: UploadFile = File(...)):
+async def describe_image(file: UploadFile = File(...),
+                         mode: str = Form(FIRE_MODE_INDUSTRIAL)):
+    """Verify one frame (Algorithm 3).
+
+    `mode` is the setting the camera is in, and it changes what counts as a fire
+    -- see FIRE_MODE_*. It is echoed back in the response so the caller can
+    record which definition produced a verdict: an incident raised under the home
+    definition is a different claim from one raised under the industrial one, and
+    a record that does not say which cannot be read later.
+    """
+    prompt, resolved = fire_prompt(mode)
     try:
         image_bytes = await file.read()
-        response = llm.invoke([_image_message(FIRE_PROMPT, image_bytes)])
+        response = llm.invoke([_image_message(prompt, image_bytes)])
         parsed = json.loads(_strip_fences(response.content))
 
         if parsed.get("detected"):
@@ -224,8 +318,10 @@ async def describe_image(file: UploadFile = File(...)):
             # Explicitly return empty string so app.py keyword check always fails.
             description = ""
 
-        logger.info("VLM result: detected=%s type=%s", parsed.get("detected"), parsed.get("type"))
-        return {"description": description, "detected": parsed.get("detected"), "type": parsed.get("type")}
+        logger.info("VLM result [%s]: detected=%s type=%s",
+                    resolved, parsed.get("detected"), parsed.get("type"))
+        return {"description": description, "detected": parsed.get("detected"),
+                "type": parsed.get("type"), "mode": resolved}
 
     except json.JSONDecodeError as e:
         # AN ERROR IS NOT AN OBSERVATION.

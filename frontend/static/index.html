@@ -843,6 +843,19 @@ button:disabled {
 <div class="wrapper">
 
   <!-- ── Top bar ── -->
+  <style>
+    .mode-switch select {
+      background: rgba(255,255,255,.06); color: #e8edf5;
+      border: 1px solid rgba(255,255,255,.18); border-radius: 999px;
+      padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer;
+    }
+    /* Home demo alarms on a candle, so it is worth seeing at a glance that the
+       screen is not in its normal setting. */
+    .mode-switch select.demo {
+      border-color: #f59e0b; color: #fcd34d;
+      background: rgba(245,158,11,.12);
+    }
+  </style>
   <div class="topbar">
     <div class="brand-mark">
       <svg viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M12 2C13 5 11 6 11 8C11 9 12 10 12 10C12 10 14 9 14 7C16 9 17 11 17 14A5 5 0 1 1 7 14C7 12 8 11 9 10C8.5 12 10 13 10 13C10 13 9 9 12 5Z"/></svg>
@@ -866,6 +879,17 @@ button:disabled {
       </a>
     </nav>
     <div class="topbar-right">
+      <!-- What counts as a fire depends on where the camera is: a candle is a
+           fire in a demonstration and an ordinary object in a canteen. The
+           operator says which, and the choice is deliberately visible rather
+           than buried in a settings panel -- somebody walking up to this screen
+           should be able to see which definition is in force. -->
+      <label class="mode-switch" title="What counts as a fire in this building">
+        <select id="detect-mode" aria-label="Detection setting">
+          <option value="industrial">Industrial setting</option>
+          <option value="home">Home demo</option>
+        </select>
+      </label>
       <div class="live-pill" id="live-pill"><span class="live-dot"></span><span id="live-text">STANDBY</span></div>
       <div class="ver-tag">v2.1</div>
     </div>
@@ -1544,12 +1568,46 @@ async function callDetect(blob) {
   return await res.json();
 }
 
+/* ── Detection setting ──────────────────────────────────────────────────────
+   Industrial by default, and the asymmetry is on purpose. Defaulting to the
+   home definition in a real building would alarm on every cigarette and pilot
+   light; defaulting to industrial during a demonstration means the candle
+   simply does not alarm, which whoever is running it sees immediately. One
+   failure is silent and erodes trust in the alarm, the other is obvious.
+
+   Persisted, because a page refresh mid-demonstration should not quietly put
+   the alarm back into a setting that ignores the candle on the table. */
+const MODE_KEY = 'firewatch.detectMode';
+
+function detectMode() {
+  const el = document.getElementById('detect-mode');
+  return el ? el.value : 'industrial';
+}
+
+(function initDetectMode() {
+  const el = document.getElementById('detect-mode');
+  if (!el) return;
+  let saved = null;
+  try { saved = localStorage.getItem(MODE_KEY); } catch (_) { /* private mode */ }
+  if (saved === 'home' || saved === 'industrial') el.value = saved;
+  const paint = () => el.classList.toggle('demo', el.value === 'home');
+  el.addEventListener('change', () => {
+    try { localStorage.setItem(MODE_KEY, el.value); } catch (_) { /* ignore */ }
+    paint();
+    S.log.push({ ts: nowHMS(), text: `[setting: ${el.value === 'home'
+      ? 'home demo — a candle or lighter now counts as fire'
+      : 'industrial — small controlled flames are ignored'}]` });
+  });
+  paint();
+})();
+
 async function callVlm(blob) {
   const fd = new FormData();
   fd.append('file', blob, 'frame.jpg');
+  fd.append('mode', detectMode());
   const res = await fetch('/api/describe', { method: 'POST', body: fd });
   if (!res.ok) throw new Error(`VLM HTTP ${res.status}`);
-  return await res.json(); // { detected, type, description }
+  return await res.json(); // { detected, type, description, mode }
 }
 
 /* Report a confirmed fire to alert-service (which pushes the mobile app).

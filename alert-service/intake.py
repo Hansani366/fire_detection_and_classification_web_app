@@ -124,7 +124,8 @@ async def _attach_route(db, incident_id: str, zone_id: str, detected_at: str) ->
 
 async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, detected_at,
                                 force=False, occupancy=None, severity="fire",
-                                verification="confirmed", scene=None, evidence=None) -> dict:
+                                verification="confirmed", scene=None, evidence=None,
+                                detection_mode=None) -> dict:
     """
     Called on every confirmed-fire event. Returns {"incidentId", "created"}.
     De-dupes: repeat events for an already-active incident refresh it silently;
@@ -177,6 +178,7 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
             await store.set_zone_status(db, zone_id, _zone_status_for(det_type))
             # A warning carries no route (nothing is burning). Now something is.
             await _attach_route(db, active["id"], zone_id, detected_at)
+            await store.set_detection_mode(db, active["id"], detection_mode)
             await _attach_report(db, active["id"], zone_id, scene, evidence)
             log.info("Escalated warning %s to fire (zone %s).", active["id"], zone_id)
             escalated = await store.get_incident(db, active["id"])
@@ -228,6 +230,7 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
                                           severity=severity, verification=verification)
         await store.set_zone_status(db, zone_id, _zone_status_for(det_type))
         await _attach_route(db, incident_id, zone_id, detected_at)
+        await store.set_detection_mode(db, incident_id, detection_mode)
         await _attach_report(db, incident_id, zone_id, scene, evidence)
         log.info("New incident %s in zone %s (type=%s conf=%.2f occupancy=%s).",
                  incident_id, zone_id, det_type, confidence,

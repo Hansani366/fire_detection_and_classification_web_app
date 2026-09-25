@@ -405,6 +405,66 @@ five report elements, called once when a fire is confirmed rather than on the de
 loop. Table 3.10 stays correct for the verification stage; the report stage needs its own
 short table.
 
+---
+
+## 16. A detection setting now decides what counts as a fire — and the trials must say which they used
+
+**Built this session, and it has methodological consequences that need stating before any
+trial is run.**
+
+The dashboard has a visible switch with two settings, and the mobile app has its own,
+independent switch for the escape-route layout. Neither reads the other.
+
+| Setting | What alarms |
+|---|---|
+| **Industrial** (default) | Only unintended fire. A candle, lighter, match, cigarette, pilot light, gas burner or welding torch is a controlled flame in normal use and does **not** alarm. |
+| **Home demo** | Any genuine sustained flame, however small and however deliberate — a candle or a lighter alarms. |
+
+The two prompts share one base and differ in exactly one clause, so the nuisance guard and
+the JSON contract are provably identical between them. `vlm-service/test_prompts.py` pins
+that: without it, a measured difference between settings could be a difference between two
+prompts rather than between two definitions of fire.
+
+### What this means for Chapter 5, and it is not small
+
+**Every detection result now belongs to a setting, and the thesis must say which.**
+
+The controlled fire trials (§3.3.5) burn small quantities in a containment tray inside a
+home. Under the industrial definition a small deliberate tray fire may read as a controlled
+flame and not alarm at all. **Those trials therefore have to run in the home setting** — and
+that means:
+
+> The time-to-detection and detection-rate results in §3.4.3 and §3.4.5 are measured under
+> the home definition of fire. They characterise the pipeline, not the industrial
+> configuration, because the industrial definition deliberately ignores the small controlled
+> flames that a domestic trial can safely produce.
+
+The nuisance results (§3.3.6, §3.4.4) are the mirror image. N1's orange lamp and welding-spark
+video are meant to test whether a welding arc causes a false alarm — which is an *industrial*
+question, and the industrial setting is the one that explicitly names a welding torch as a
+normal controlled flame. Running the nuisance battery in the home setting would measure the
+wrong configuration.
+
+**Decide and record, per §3.3.9's naming convention:**
+
+- [ ] Which setting each trial family runs in. My reading: fire trials in home, nuisance
+      trials in both (the comparison between settings is itself a result worth having).
+- [ ] Add the setting to the run filename or the trial log, so a result can never be read
+      without it. `<scenario_id>_<configuration>_<run>_...` currently has nowhere to put it.
+- [ ] State in §3.4.10 that absolute detection figures are setting-dependent and are not
+      transferable between the two.
+
+Every incident record already stores `detectionMode`, so the setting travels with the data
+even if a log entry is missed.
+
+### One unresolved confound, flagged earlier and still open
+
+The live alarm verifies through `FIRE_PROMPT` — which now has two settings — while the
+ablation arms read `DETAILED_PROMPT`, which has none. So "combination 6" in the ablation is
+not the deployed full system, and adding the setting made them diverge further. Whichever
+path H1 is measured through determines which artefact the result describes. This needs a
+sentence in Chapter 4 either way.
+
 ## Figures and tables to regenerate
 
 - **Figure of the facility graph** (§3.3.7) — should now show 8 zones, 2 exits,

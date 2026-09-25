@@ -189,7 +189,12 @@ CREATE TABLE IF NOT EXISTS incidents (
     -- the detector and sensor evidence. What is kept is the graded claim list,
     -- not the model's raw answer: the point of the record is that a reader can
     -- see which statements were confirmed, which were withheld, and why.
-    situation_report TEXT
+    situation_report TEXT,
+    -- 'industrial' | 'home'. Which definition of fire was in force when this
+    -- was raised: under the home demonstration setting a candle counts, and an
+    -- incident from that setting is a different claim from one raised in a
+    -- working building. Stored so the record can say so afterwards.
+    detection_mode   TEXT
 );
 """
 
@@ -218,6 +223,7 @@ _ADDED_COLUMNS = (
     ("route_plan_revision", "TEXT"),
     ("route_error", "TEXT"),
     ("situation_report", "TEXT"),
+    ("detection_mode", "TEXT"),
 )
 
 
@@ -522,6 +528,14 @@ async def set_incident_route(db, incident_id: str, record: dict, blocked: dict,
          record.get("generatedInMs"), latency_ms, _utcnow(),
          record.get("siteKey"), record.get("planRevision"), incident_id),
     )
+    await db.commit()
+
+
+async def set_detection_mode(db, incident_id: str, mode: str | None) -> None:
+    if not mode:
+        return
+    await db.execute("UPDATE incidents SET detection_mode = ? WHERE id = ?",
+                     (mode, incident_id))
     await db.commit()
 
 

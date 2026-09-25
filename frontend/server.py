@@ -9,7 +9,7 @@ import os
 import time
 
 import httpx
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import Form, FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -111,8 +111,14 @@ async def proxy_detect(file: UploadFile = File(...)):
 
 
 @app.post("/api/describe")
-async def proxy_describe(file: UploadFile = File(...)):
+async def proxy_describe(file: UploadFile = File(...),
+                         mode: str = Form("industrial")):
     """Forward a JPEG frame to the VLM/Gemini service and return its JSON.
+
+    `mode` is the setting the camera is in, and it decides what counts as a fire
+    -- a candle is a fire in a demonstration and furniture in a canteen. Passed
+    straight through; vlm-service resolves an unknown value to industrial.
+
     Uses a longer timeout since Gemini API calls can take 20-40s."""
     data = await file.read()
     try:
@@ -120,6 +126,7 @@ async def proxy_describe(file: UploadFile = File(...)):
             resp = await client.post(
                 GEMINI_URL,
                 files={"file": ("frame.jpg", data, "image/jpeg")},
+                data={"mode": mode},
             )
         return JSONResponse(content=resp.json(), status_code=resp.status_code)
     except httpx.TimeoutException:
