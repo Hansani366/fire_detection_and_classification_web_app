@@ -175,7 +175,58 @@ def route_json(inc: dict) -> dict | None:
     return {k: record[k] for k in keep if k in record}
 
 
-def incident_json(inc: dict, zone: dict) -> dict:
+def checkout_json(inc: dict, checked_out: int) -> dict:
+    """Check-out and head-count, side by side, with the gap named.
+
+    THESE ARE TWO INSTRUMENTS, NOT ONE NUMBER. The camera counts people still in
+    the zone; `checkedOut` counts people who said they are out. Section 3.4.8
+    asks for both reported together with every difference listed, and the
+    difference is the interesting part: a positive `unaccounted` may mean the
+    camera is still seeing somebody who has not tapped, or that it is seeing a
+    coat on a chair. Collapsing them into one figure throws away the only signal
+    that either of them might be wrong.
+
+    `unaccounted` is None when the camera never had a number, because "we do not
+    know how many were in there" must never render as "everybody is out".
+    """
+    peak = inc.get("occupancy_peak")
+    return {
+        "checkedOut": checked_out,
+        "peakOccupancy": peak,
+        "currentOccupancy": inc.get("occupancy_current"),
+        # Peak seen by the camera, minus those who have said they are out.
+        "unaccounted": None if peak is None else max(0, peak - checked_out),
+        "source": "device",
+    }
+
+
+def delivery_stats(rows: list[dict]) -> dict:
+    """Median and 95th percentile of the one-way delivery estimate.
+
+    The 95th percentile sits beside the median because in a safety system the
+    worst case matters more than the typical one.
+    """
+    vals = sorted(r["oneway_ms"] for r in rows if r.get("oneway_ms") is not None)
+
+    def _pct(p):
+        if not vals:
+            return None
+        return round(vals[min(len(vals) - 1, int(round((p / 100) * (len(vals) - 1))))], 1)
+
+    return {
+        "devices": len(rows),
+        "acknowledged": len(vals),
+        "p50Ms": _pct(50),
+        "p95Ms": _pct(95),
+        "maxMs": round(vals[-1], 1) if vals else None,
+        "method": "round-trip on the server clock, halved",
+        "caveat": ("Assumes a symmetric network path and includes the app's own "
+                   "handling time. Measured this way so the handset clock, which "
+                   "we cannot check, does not enter the figure."),
+    }
+
+
+def incident_json(inc: dict, zone: dict, checked_out: int = 0) -> dict:
     return {
         "id": inc["id"],
         # 'warning' = gas rising, nothing visible, no siren (tier 1a).
@@ -200,6 +251,7 @@ def incident_json(inc: dict, zone: dict) -> dict:
         },
         "classification": classification_json(inc),
         "route": route_json(inc),
+        "checkout": checkout_json(inc, checked_out),
     }
 
 
@@ -253,7 +305,8 @@ def _gap(a: str | None, b: str | None) -> int | None:
     return max(0, round((_parse(b) - _parse(a)).total_seconds()))
 
 
-def report_json(inc: dict, zone: dict) -> dict:
+def report_json(inc: dict, zone: dict, checked_out: int = 0,
+                deliveries: list[dict] | None = None) -> dict:
     """The record of one incident, for reading after it is over.
 
     WHY THE TIMELINE IS THE POINT. A responder wants to know what burned. An
@@ -322,6 +375,8 @@ def report_json(inc: dict, zone: dict) -> dict:
             "atClose": inc.get("occupancy_current"),
         },
         "muster": muster_json(inc),
+        "checkout": checkout_json(inc, checked_out),
+        "delivery": delivery_stats(deliveries or []),
         "route": route_json(inc),
         "routeLatencyMs": inc.get("route_latency_ms"),
         "routeError": inc.get("route_error"),
@@ -339,6 +394,8 @@ def report_json(inc: dict, zone: dict) -> dict:
             "has seen a recorded fire, so the fuel is a best estimate, not a finding.",
             "Occupancy counts one camera's field of view. Anyone never in frame was "
             "never counted, and anyone who walked out of shot counts as evacuated.",
+            "The head-count and the check-out count are separate measurements of the "
+            "same evacuation and will not agree. Neither is corrected against the other.",
         ],
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
     }

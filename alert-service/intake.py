@@ -153,6 +153,9 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
         # told about a quiet warning and must now be told it is a fire.
         zone = ZONES_BY_ID[zone_id]
         tokens = await store.list_tokens(db)
+        # Stamp before dispatch, not after: the interval Table 3.19 measures
+        # starts when the decision leaves this service.
+        await store.record_push_sent(db, escalated["id"], tokens)
         dead = fcm.send_fire_push(tokens, {
             "id": escalated["id"], "zone_id": zone_id, "zone_name": zone["name"],
             "floor": zone["floor"], "detector_id": zone["detector_id"], "type": det_type,
@@ -201,6 +204,7 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
         "route": _route_for_push(await store.get_incident(db, inc["id"])),
     }
     tokens = await store.list_tokens(db)
+    await store.record_push_sent(db, inc["id"], tokens)
     dead = fcm.send_fire_push(tokens, ctx)
     if dead:
         await store.delete_tokens(db, dead)
@@ -253,6 +257,7 @@ async def handle_warning(db, zone_id, description, sensor_summary, detected_at,
 
     zone = ZONES_BY_ID[zone_id]
     tokens = await store.list_tokens(db)
+    await store.record_push_sent(db, inc["id"], tokens)
     dead = fcm.send_warning_push(tokens, {
         "id": inc["id"], "zone_id": zone_id, "zone_name": zone["name"],
         "floor": zone["floor"], "detector_id": zone["detector_id"],

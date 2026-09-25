@@ -83,6 +83,23 @@ class ClearIn(BaseModel):
     zoneId: str = DEFAULT_ZONE_ID
 
 
+class CheckoutIn(BaseModel):
+    """One occupant marking themselves out.
+
+    `token` is the device's FCM registration token, which the app already has
+    and already sends to /api/devices. It identifies a phone, not a person, and
+    nothing else about it is stored — one handset is one occupant, which is the
+    anonymous identity Section 3.5 asks for.
+    """
+    token: str | None = None
+
+
+class DeliveredIn(BaseModel):
+    """A device acknowledging that a push arrived."""
+    token: str | None = None
+    state: str | None = None   # background | foreground | opened
+
+
 class TestAlertIn(BaseModel):
     """Demo hook. `severity` lets a demo exercise the quiet and sensor-only
     tiers too -- otherwise the only way to see a gas warning or a carbon-monoxide
@@ -160,7 +177,8 @@ async def _active_incident_json():
     if not inc:
         return None
     zone = await store.get_zone(_db(), inc["zone_id"])
-    return ser.incident_json(inc, _zone_or_stub(zone, inc["zone_id"]))
+    return ser.incident_json(inc, _zone_or_stub(zone, inc["zone_id"]),
+                             await store.count_checkouts(_db(), inc["id"]))
 
 
 @app.get("/api/state")
@@ -175,7 +193,8 @@ async def get_incident(incident_id: str):
     if not inc:
         raise HTTPException(404, "incident not found")
     zone = await store.get_zone(_db(), inc["zone_id"])
-    return ser.incident_json(inc, _zone_or_stub(zone, inc["zone_id"]))
+    return ser.incident_json(inc, _zone_or_stub(zone, inc["zone_id"]),
+                             await store.count_checkouts(_db(), inc["id"]))
 
 
 @app.get("/api/incidents/{incident_id}/report")
@@ -191,7 +210,10 @@ async def get_incident_report(incident_id: str):
     if not inc:
         raise HTTPException(404, "incident not found")
     zone = await store.get_zone(_db(), inc["zone_id"])
-    return ser.report_json(inc, _zone_or_stub(zone, inc["zone_id"]))
+    return ser.report_json(
+        inc, _zone_or_stub(zone, inc["zone_id"]),
+        await store.count_checkouts(_db(), incident_id),
+        await store.get_deliveries(_db(), incident_id))
 
 
 @app.get("/api/incidents/{incident_id}/route")
@@ -320,13 +342,80 @@ async def analyse_routes(limit: int = 200):
     }
 
 
-@app.post("/api/incidents/{incident_id}/ack")
-async def ack_incident(incident_id: str):
+@app.post("/api/incidents/{incident_id}/checkout")
+async def checkout(incident_id: str, body: CheckoutIn | None = None):
+    """Mark one occupant out of the building.
+
+    Idempotent by (incident, device): a responder under stress taps twice, a
+    notification gets opened twice, a request is retried after a timeout. All of
+    those are the same person and must count once, or the figure that gets
+    compared against the camera head-count is inflated by the interface.
+
+    Returns both numbers so the caller can show them side by side rather than
+    reconciling them into one.
+    """
     inc = await store.get_incident(_db(), incident_id)
     if not inc:
         raise HTTPException(404, "incident not found")
+    token = (body.token if body else None) or ""
+    if not token:
+        raise HTTPException(400, "token required to count a check-out once")
+    n = await store.record_checkout(_db(), incident_id, token)
+    log.info("Check-out %d for incident %s (device %s…).", n, incident_id, token[:12])
+    return {"ok": True, "checkedOut": n,
+            "peakOccupancy": inc.get("occupancy_peak"),
+            "currentOccupancy": inc.get("occupancy_current")}
+
+
+@app.post("/api/incidents/{incident_id}/ack")
+async def ack_incident(incident_id: str, body: CheckoutIn | None = None):
+    """Deprecated alias for /checkout, kept so an older build keeps working.
+
+    Without a token there is nobody to count, so it falls back to the synthetic
+    muster counter it always drove.
+    """
+    inc = await store.get_incident(_db(), incident_id)
+    if not inc:
+        raise HTTPException(404, "incident not found")
+    token = (body.token if body else None) or ""
+    if token:
+        n = await store.record_checkout(_db(), incident_id, token)
+        return {"ok": True, "checkedOut": n}
     await store.bump_muster(_db(), incident_id)
-    return {"ok": True}
+    return {"ok": True, "checkedOut": None, "note": "no token; muster estimated"}
+
+
+@app.post("/api/incidents/{incident_id}/delivered")
+async def delivered(incident_id: str, body: DeliveredIn | None = None):
+    """A device acknowledging a push, which closes the delivery-time round trip.
+
+    Both ends of the interval are stamped here, on one clock, so the handset's
+    clock never enters the measurement (Table 3.19). An acknowledgement with no
+    matching send — a push from before this existed, or a device that was never
+    registered — is accepted and ignored rather than erroring: the alert already
+    did its job, and failing the call would make the app retry something that
+    can never succeed.
+    """
+    token = (body.token if body else None) or ""
+    if not token:
+        raise HTTPException(400, "token required")
+    row = await store.record_delivery(
+        _db(), incident_id, token, (body.state if body else None))
+    if not row or row.get("oneway_ms") is None:
+        return {"ok": True, "matched": False}
+    log.info("Delivery for %s (device %s…): %.0f ms one-way.",
+             incident_id, token[:12], row["oneway_ms"])
+    return {"ok": True, "matched": True, "onewayMs": round(row["oneway_ms"], 1)}
+
+
+@app.get("/api/analysis/delivery")
+async def analyse_delivery(limit: int = 500):
+    """Decision-to-delivery across every incident (Table 3.19)."""
+    rows = await store.get_all_deliveries(_db(), limit)
+    return {"summary": ser.delivery_stats(rows),
+            "rows": [{"incidentId": r["incident_id"], "sentAt": r["sent_at"],
+                      "receivedAt": r["received_at"], "onewayMs": r["oneway_ms"],
+                      "state": r["state"]} for r in rows]}
 
 
 @app.get("/api/extinguishers")

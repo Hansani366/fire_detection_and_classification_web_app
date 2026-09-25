@@ -24,6 +24,24 @@ DEFAULT_MUSTER_PRESENT = 42
 DEFAULT_MUSTER_TOTAL = 45
 
 
+def _utcnow_ms() -> str:
+    """Now, to the millisecond.
+
+    Everything else in this file stamps to the second, which is fine for an
+    incident timeline nobody reads to sub-second precision. Delivery timing is
+    not that: Table 3.19 reports a median and a 95th percentile in milliseconds,
+    and at second granularity every fast delivery measures as exactly zero.
+    """
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _parse_ts(ts: str) -> datetime:
+    try:
+        return datetime.fromisoformat((ts or "").replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.now(timezone.utc)
+
+
 def _utcnow() -> str:
     """ISO-8601 UTC with a trailing Z (matches the Dart DateTime.parse format)."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -46,6 +64,50 @@ CREATE TABLE IF NOT EXISTS zones (
     status       TEXT,      -- clear | smoke | fire
     last_scan_at TEXT,
     glyph        TEXT
+);
+
+-- Occupants who marked themselves out, one row per person per incident.
+--
+-- WHY THIS IS NOT THE HEAD-COUNT, AND MUST NEVER BE FOLDED INTO IT. The camera
+-- counts people still in the zone; this counts people who said they are out.
+-- They are different measurements of the same evacuation, taken by different
+-- instruments, and Section 3.4.8 requires them reported side by side with every
+-- difference listed. The difference IS the finding: it is how you discover the
+-- camera missed somebody behind a rack, or that somebody tapped the button from
+-- the car park without ever having been in the building.
+--
+-- The composite primary key is what makes the number trustworthy. A responder
+-- under stress taps twice; a notification is opened twice; the app retries a
+-- request it never saw the answer to. Every one of those is the same person,
+-- and INSERT OR IGNORE makes it count once.
+CREATE TABLE IF NOT EXISTS checkouts (
+    incident_id  TEXT NOT NULL,
+    device_token TEXT NOT NULL,
+    at           TEXT NOT NULL,
+    PRIMARY KEY (incident_id, device_token)
+);
+
+-- Push delivery timing (Table 3.19, "decision to delivery").
+--
+-- MEASURED AS A ROUND TRIP ON THE SERVER CLOCK, then halved. The interval ends
+-- on a handset whose clock we do not control and cannot check, so a one-way
+-- measurement would be reporting NTP drift alongside network latency with no way
+-- to separate them. Stamping both ends here removes the handset clock from the
+-- measurement entirely.
+--
+-- What that buys is honesty about a different thing: the halved figure assumes a
+-- symmetric path and folds the app's own handling time into the estimate. That
+-- is a stated assumption rather than an invisible error, which is the trade this
+-- design makes on purpose.
+CREATE TABLE IF NOT EXISTS deliveries (
+    incident_id  TEXT NOT NULL,
+    device_token TEXT NOT NULL,
+    sent_at      TEXT NOT NULL,   -- when we handed it to FCM
+    received_at  TEXT,            -- when the device's acknowledgement got back
+    rtt_ms       REAL,            -- received_at - sent_at
+    oneway_ms    REAL,            -- rtt_ms / 2, the reported figure
+    state        TEXT,            -- background | foreground | opened
+    PRIMARY KEY (incident_id, device_token)
 );
 
 CREATE TABLE IF NOT EXISTS incidents (
@@ -465,6 +527,99 @@ async def set_incident_route_error(db, incident_id: str, error: str) -> None:
         (error, _utcnow(), incident_id),
     )
     await db.commit()
+
+
+# ── Check-out and delivery ───────────────────────────────────────────────────
+
+async def record_checkout(db, incident_id: str, device_token: str) -> int:
+    """Mark one occupant out. Idempotent; returns the incident's total."""
+    await db.execute(
+        "INSERT OR IGNORE INTO checkouts (incident_id, device_token, at) VALUES (?, ?, ?)",
+        (incident_id, device_token, _utcnow()),
+    )
+    await db.commit()
+    return await count_checkouts(db, incident_id)
+
+
+async def count_checkouts(db, incident_id: str) -> int:
+    async with db.execute(
+        "SELECT COUNT(*) AS n FROM checkouts WHERE incident_id = ?", (incident_id,)
+    ) as cur:
+        row = await cur.fetchone()
+    return int(row["n"]) if row else 0
+
+
+async def record_push_sent(db, incident_id: str, tokens: list[str]) -> None:
+    """Stamp the moment each message was handed to FCM.
+
+    INSERT OR IGNORE, not REPLACE: an incident that is pushed twice (a warning
+    escalating to a fire, a classification arriving later) keeps the FIRST send.
+    The interval Table 3.19 asks for runs from the decision, and the decision
+    happened at the first push.
+    """
+    now = _utcnow_ms()
+    for t in tokens:
+        await db.execute(
+            "INSERT OR IGNORE INTO deliveries (incident_id, device_token, sent_at) "
+            "VALUES (?, ?, ?)",
+            (incident_id, t, now),
+        )
+    await db.commit()
+
+
+async def record_delivery(db, incident_id: str, device_token: str,
+                          state: str | None = None) -> dict | None:
+    """Close the loop for one device. Returns the row, or None if unmatched.
+
+    Only the FIRST acknowledgement counts (`received_at IS NULL` in the WHERE):
+    a foreground alert that is later tapped would otherwise overwrite a fast
+    delivery with the time the person happened to pick up the phone, which is a
+    measure of human attention, not of the system.
+    """
+    async with db.execute(
+        "SELECT * FROM deliveries WHERE incident_id = ? AND device_token = ?",
+        (incident_id, device_token),
+    ) as cur:
+        row = await cur.fetchone()
+    if row is None:
+        return None
+    if row["received_at"] is not None:
+        return dict(row)   # already closed; keep the first
+
+    # The arithmetic is done here rather than in SQL. SQLite's julianday() would
+    # have to parse our own timestamp format back, and a parse it silently
+    # disagreed with would produce a plausible-looking wrong number instead of
+    # an error -- which is the worst outcome for a figure that goes in a table.
+    now = _utcnow_ms()
+    rtt = max(0.0, (_parse_ts(now) - _parse_ts(row["sent_at"])).total_seconds() * 1000.0)
+    await db.execute(
+        """UPDATE deliveries
+              SET received_at = ?, rtt_ms = ?, oneway_ms = ?, state = COALESCE(?, state)
+            WHERE incident_id = ? AND device_token = ? AND received_at IS NULL""",
+        (now, rtt, rtt / 2.0, state, incident_id, device_token),
+    )
+    await db.commit()
+    async with db.execute(
+        "SELECT * FROM deliveries WHERE incident_id = ? AND device_token = ?",
+        (incident_id, device_token),
+    ) as cur:
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_deliveries(db, incident_id: str) -> list[dict]:
+    async with db.execute(
+        "SELECT * FROM deliveries WHERE incident_id = ? ORDER BY sent_at", (incident_id,)
+    ) as cur:
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_all_deliveries(db, limit: int = 500) -> list[dict]:
+    async with db.execute(
+        "SELECT * FROM deliveries WHERE received_at IS NOT NULL "
+        "ORDER BY sent_at DESC LIMIT ?", (limit,)
+    ) as cur:
+        return [dict(r) for r in await cur.fetchall()]
 
 
 async def bump_muster(db, incident_id: str) -> None:

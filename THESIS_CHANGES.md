@@ -172,8 +172,8 @@ honestly; the objective should not claim more than the table delivers.
 
 ## 9. §3.4.6 — what the delivery-time figure measures
 
-**Not yet built** (this is the measurement plumbing, scheduled after the demo), but the
-method is decided and the thesis should say which one:
+**Built.** `POST /api/incidents/{id}/delivered`, with both ends of the interval stamped by
+the server. The wording to use:
 
 > The decision-to-delivery interval is measured as a round trip on the server clock —
 > from the moment the message is handed to Firebase Cloud Messaging to the moment the
@@ -181,7 +181,38 @@ method is decided and the thesis should say which one:
 > dependence on the accuracy of the handset's clock. It assumes a symmetric network
 > path and includes the application's own handling time in the estimate.
 
+The app acknowledges from three places — a foreground message, a background/terminated
+message, and a notification tap — and the backend keeps whichever arrives first. The
+background path matters most and is the one a foreground-only implementation would miss:
+an alert reaching a phone in somebody's pocket at night is the delivery the measurement is
+actually about. Per-incident figures are in the incident report; the distribution across
+all incidents is at `GET /api/analysis/delivery`.
+
+**One thing to state plainly in §3.4.10.** A device that never acknowledges is invisible to
+the median. `delivery_stats` reports `devices` (pushes sent) alongside `acknowledged`
+(round trips closed) for exactly that reason — if those two numbers diverge, the median is
+describing the phones that answered, not the phones that were sent to.
+
 ---
+
+---
+
+## 10. §3.4.8 — the head-count comparison is now a stored measurement
+
+**As written**, §3.4.8 asks for the head-count and the check-out count "reported side by
+side, and every difference listed". Both are now recorded per incident and served together
+in the incident record, so the comparison is read from data rather than assembled by hand.
+
+Worth adding to the method, because it is a design decision the numbers depend on:
+
+> A check-out is recorded against the device that sent it, so repeated taps, a reopened
+> notification or a retried request all count once. The two figures are never reconciled:
+> where the camera's peak head-count exceeds the check-out count, the difference is
+> reported rather than resolved in favour of either instrument.
+
+Note also that the synthetic muster constants the prototype shipped with (42 of 45) are no
+longer used once real check-outs exist. If any earlier screenshot in the thesis shows
+those numbers, it predates this and should be retaken.
 
 ## Figures and tables to regenerate
 

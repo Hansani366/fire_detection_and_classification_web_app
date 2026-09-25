@@ -190,12 +190,35 @@ same LAN can reach it over plain HTTP without the self-signed-cert dance.
 | `GET  /health` | Liveness + whether FCM is configured |
 | `POST /api/devices` | Register a device's FCM token |
 | `GET  /api/state` | Current zones + the active incident |
-| `GET  /api/incidents/{id}` | Fetch a single incident |
-| `POST /api/incidents/{id}/ack` | Acknowledge / bump the muster count |
+| `GET  /api/incidents/{id}` | Fetch a single incident (includes its evacuation route) |
+| `GET  /api/incidents/{id}/report` | The record, read after the event: timeline, durations, counts |
+| `GET  /api/incidents/{id}/route` | The full stored route record, for analysis |
+| `POST /api/incidents/{id}/checkout` | One occupant marks themselves out (idempotent per device) |
+| `POST /api/incidents/{id}/delivered` | A device acknowledging a push; closes the delivery round trip |
+| `POST /api/incidents/{id}/ack` | **Deprecated** alias for `/checkout` |
+| `GET  /api/site/plan` | Which facility is loaded, and in what coordinate space |
+| `GET  /api/extinguishers` | The full response-guidance table |
 | `GET  /api/history` | Resolved incidents |
+| `GET  /api/analysis/routes` | Route validity, hazard intersection, optimality gap, refusals |
+| `GET  /api/analysis/delivery` | Decision-to-delivery distribution (median, p95) |
 | `POST /api/events/fire` | Report a confirmed-fire event (from the dashboard) |
+| `POST /api/events/warning` | Tier 1a: gas rising, nothing visible. Quiet channel, no siren |
+| `POST /api/events/classification` | Tier 3: attach the fuel verdict to an open fire |
 | `POST /api/events/clear` | Clear a zone |
-| `POST /api/test-alert` | Trigger a synthetic alert for testing |
+| `POST /api/test-alert` | Trigger a synthetic alert. `{"severity": "warning" \| "gas_danger" \| "fire"}` |
+
+**Evacuation routing.** The facility graph lives in `alert-service/sites/*.json`, one file
+per site, selected by `SITE_KEY`. A route is generated when an incident opens and stored
+with it. See [alert-service/sites/README.md](alert-service/sites/README.md) for the format
+and the mirror contract with the mobile app's drawings.
+
+Two offline test suites, no Docker needed:
+
+```bash
+cd alert-service
+python3 -m pytest test_routing.py -q   # the route scenarios, with hand-derived ground truth
+python3 -m pytest test_api.py -q       # every endpoint over HTTP, in-process
+```
 
 **Configuration** (set in `docker-compose.yml`):
 
@@ -203,7 +226,9 @@ same LAN can reach it over plain HTTP without the self-signed-cert dance.
 |---------|---------|---------|
 | `FIREBASE_CREDENTIALS` | `/secrets/firebase-sa.json` | Service-account key; enables push |
 | `DB_PATH` | `/data/alert.db` | SQLite location (persisted in a Docker volume) |
-| `SITE_NAME` | `Unit 7` | Site label shown in the app |
+| `SITE_KEY` | `unit7` | Which file in `alert-service/sites/` to load — the zone catalogue *and* the evacuation graph together. `unit7` (demo hall) or `home` (trial facility) |
+| `SITE_NAME` | from the site file | Display label override |
+| `HAZARD_RADIUS_M` | from the site file | Blocks every walkable segment within this distance of the fire. 6 m for `unit7`, 2 m for `home` — a radius sized for a 36 m hall reaches every room of a 13 m house |
 | `COOLDOWN_SECONDS` | `120` | Min seconds between separate incidents in one zone |
 | `CLEAR_AFTER_SECONDS` | `30` | No fire event for this long → auto-clear the incident |
 
