@@ -543,8 +543,10 @@ follow the backend from one to the other. Nothing in the thesis needs to narrow 
 facility, and §4's per-site hazard radius stands as written.
 
 What is worth one sentence in Chapter 4 is the safety rule underneath it: a route is drawn
-only on the plan for its own site, and a site this build has no drawing for makes the route
-unavailable with a line on screen saying why. The two plans are at different scales — 25 px/m
+only on the plan for its own site, and a site this build has no drawing for makes **both the
+route and the floor plan** unavailable, with a line on screen saying why. Withholding only the
+route would still put one specific building in front of the reader, with a room highlighted and
+their own position marked on it, for a site the app has just admitted it cannot identify. The two plans are at different scales — 25 px/m
 for the home, 10 px/m for the hall — so the same coordinates land 2.5 times further into one
 building than the other, and a guessed plan would place a confident path through the wrong
 walls rather than merely an inaccurate one. `test/route_test.dart` checks every drawing
