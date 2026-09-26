@@ -3,7 +3,7 @@ FireWatch alert-service — the mobile app's backend.
 
 Holds site state (zones / incidents / history), receives confirmed-fire events
 from the detection producers, sends FCM push notifications, and auto-clears
-incidents when the fire stops. See CLAUDE-style notes in the sibling modules.
+incidents when the fire stops. See the docstrings in the sibling modules.
 """
 
 import asyncio
