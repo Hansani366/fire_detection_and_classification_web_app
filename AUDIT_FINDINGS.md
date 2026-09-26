@@ -60,8 +60,9 @@ sensor node, which measures nothing, and the evidence base, which is still simul
 
 The audit returned twenty-one blocking findings, which reduce to fourteen distinct
 problems. They are listed here in the order they should be addressed. Items 1 to 7 and
-items 13 to 14 have been fixed; the status column records this. Items 8 to 12 are open and
-are mostly collection and documentation work rather than repairs.
+items 13 to 14 have been fixed. Items 8 to 12 need no change to the code, each for a
+stated reason — none of them is a defect in the software, and the section below records why
+so that the decision can be defended rather than merely asserted.
 
 | # | Problem | Repository | Status |
 |---|---|---|---|
@@ -72,11 +73,11 @@ are mostly collection and documentation work rather than repairs.
 | 5 | Demo alerts carry no situation report | Web app | Fixed |
 | 6 | The officer's report shows invented occupancy numbers | Web app | Fixed |
 | 7 | The results download fails | Web app | Fixed |
-| 8 | The sensor node measures nothing | Sensor node | Open |
-| 9 | No bill of materials exists | Sensor node, ESP32-CAM | Open |
-| 10 | The detection model misses its target and cannot be rebuilt | Web app | Open |
-| 11 | No real fire trial data has been collected | Web app | Open |
-| 12 | A real Wi-Fi password remains in the saved history | ESP32-CAM | Open |
+| 8 | The sensor node measures nothing | Sensor node | No fix needed |
+| 9 | No bill of materials exists | Sensor node, ESP32-CAM | No fix needed |
+| 10 | The detection model misses its target, and cannot be rebuilt from the repositories | Web app | No fix needed |
+| 11 | No real fire trial data has been collected | Web app | No fix needed |
+| 12 | A real Wi-Fi password remains in the saved history | ESP32-CAM | No fix needed |
 | 13 | Six ablation configurations were built, four are described | Web app | Fixed |
 | 14 | The home and industrial profiles are not equally evidenced | Web app | Fixed |
 
@@ -207,11 +208,68 @@ its parser turns a null into zero. The same invented constants still sit in the 
 fixtures at `lib/data/api/api_fire_repository.dart` and `lib/data/mock/mock_data.dart`; they
 are unreachable in the interface and are listed under extra code rather than fixed here.
 
-### 8 to 14 — Open
+### 8 to 12 — No fix needed, and why
 
-These remain open and are described in the findings below. Items 8, 9 and 11 are collection
-and documentation work rather than repairs. Item 12 should be closed by changing the Wi-Fi
-password, which takes minutes.
+These five were reviewed and closed without a code change. Each is a decision with a
+reason, not an outstanding defect. What remains in every case is research work — collecting
+data, writing a document, finishing a training run — or an operational step outside the
+repositories.
+
+**8. The sensor node measures nothing.** The board runs in mock mode and invents believable
+readings. This is not a software fault: the four modules were never wired, so there is
+nothing for the firmware to read. The code already carries the seam for real hardware in
+`readRealSensors()`, and the mock state is declared honestly — a `mock: true` flag travels
+with every reading, through the sensor service, to the dashboard, so no figure anywhere is
+presented as measured when it is not. The sensor stage is instead validated against the
+CFAST synthetic set, which Section 3.3.4 describes and Chapter 3 already states as a
+limitation. Closing this needs hardware, not edits. Two details to carry into Chapter 4 if
+the modules are ever wired: the DHT22 read is commented out, and the raw ADC values are
+derived from the ppm rather than read from the pins.
+
+**9. No bill of materials exists.** A parts list is a document, not code, and it belongs in
+Chapter 4 beside the hardware description rather than in a firmware repository. The thesis
+promises it three times, so it still has to be written — but nothing in these repositories
+is wrong for its absence.
+
+**10. The detection model misses its target, and cannot be rebuilt from the repositories.**
+Two separate things, and neither is a software defect.
+
+The model records `mAP@0.5 = 0.84635` against RO1.2's target of 0.85 — short by 0.4 per
+cent relative. The reason is visible in the checkpoint: the run was configured for 300
+epochs with a patience of 50, and it stopped at **27**. Neither limit was reached, so the
+run was interrupted rather than finished, and epoch 27 was the best of all 27 with the curve
+still climbing. The target is most likely one completed training run away.
+
+The recipe is not lost. All 109 training arguments are stored inside `best.pt`: base model
+`yolo11n.pt`, batch 32, image size 640, seed 0, learning rate 0.005, the full augmentation
+settings and the exact library version. What is absent from the repositories is the dataset
+definition — `data` points at a Google Drive path used from a Colab notebook — and the
+notebook itself. So the model cannot be rebuilt from a clone, but it can be rebuilt by
+whoever holds that folder. Copying `data.yaml` and the notebook into the repository would
+close the reproducibility half cheaply, and is worth doing because it is the part an
+examiner can check.
+
+Worth noting separately: recall is 0.777, the weakest of the reported figures, and for fire
+detection it is the one that matters most. No target is set for it in the thesis.
+
+**11. No real fire trial data has been collected.** Datasets DS4 to DS8 are primary data
+that exist only once the system is run. The recording pipeline is built and has never been
+given an input. This is the experimental work of the study, not a repair, and
+`THESIS_CHANGES.md` already records it under "Outstanding".
+
+**12. A real Wi-Fi password remains in the saved history.** Accepted on the basis that the
+exposure is contained, with one condition that has to hold.
+
+The credential sits in the history of `esp_32_cam_code`, which was checked and is **not
+publicly visible**. `esp_32_sensor_network_code` is also private. The two repositories that
+are public are `fire_detection_and_classification_web_app` and
+`fire_notification_and_evacuation_mobile_app`, and neither contains a committed secret — all
+four histories were searched and this is the only one.
+
+**The condition: `esp_32_cam_code` must stay private.** Its `README.md` currently states
+that "the repository stays safe to publish". That sentence is not true of the history, and
+acting on it later would publish the password along with everything else. Either change that
+line, or change the Wi-Fi password, before that repository is ever made public.
 
 ## Gaps — the thesis needs it, the code does not deliver it
 

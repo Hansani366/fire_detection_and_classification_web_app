@@ -720,6 +720,53 @@ as extra code in `AUDIT_FINDINGS.md` rather than fixed here.
 
 ---
 
+## 21. The five findings closed without a code change
+
+The audit in `AUDIT_FINDINGS.md` raised fourteen critical problems. Seven were fixed in the
+alarm path (section 20), two were the ablation and the route evidence (sections 13 and 19),
+and the remaining five were closed **without changing any code**, because none of them is a
+software defect. They are recorded here because each still leaves something to write.
+
+| # | Finding | What is left to do, and where |
+|---|---|---|
+| 8 | The sensor node measures nothing | Wire the four modules, or keep the mock and state it. Already a declared limitation |
+| 9 | No bill of materials exists | Write it into Chapter 4. Promised three times, never produced |
+| 10 | The detector is 0.4 % under its mAP target | Finish the interrupted training run. See below |
+| 11 | No real fire trial data | DS4 to DS8. Already under "Outstanding" below |
+| 12 | A Wi-Fi password in the ESP32-CAM history | Keep that repository private, or change the password |
+
+**Item 8 does not weaken the sensor claims as much as it first appears.** The mock state is
+declared all the way through: a `mock: true` flag travels with every reading to the
+dashboard, so no number is presented as measured when it is not. Chapter 3 already routes
+the sensor evidence through the CFAST synthetic set for this reason. What Chapter 4 must not
+do is describe the node as measuring anything.
+
+**Item 10 is worth restating accurately, because the first reading of it was too harsh.**
+The recorded figure is mAP@0.5 = 0.84635 against a target of 0.85. The checkpoint shows why:
+the run was configured for 300 epochs with a patience of 50 and **stopped at 27**, so
+neither limit was reached and the run was interrupted rather than completed. Epoch 27 was
+the best of the 27 and the curve was still rising. All 109 training arguments are stored
+inside `best.pt`, so the recipe survives; what is missing from the repository is the dataset
+definition, which points at a Google Drive path, and the Colab notebook.
+
+So two sentences for Chapter 4, and one decision. The sentences: report the measured figure
+with the conditions it was measured under, and say that training was stopped early. The
+decision: either finish the run and report the figure it reaches, or keep 0.84635 and change
+RO1.2's target to match what the artefact achieves. Reporting 0.85 as met is the one option
+that is not available.
+
+Recall is 0.777 and no target is set for it. For fire detection that is the figure that
+matters most, so Chapter 5 should report it prominently rather than leaving it beside the
+mean.
+
+**Item 12 has a condition attached.** The password sits in the history of `esp_32_cam_code`,
+which is private, as is `esp_32_sensor_network_code`. The public repositories are the web app
+and the mobile app, and neither holds a committed secret. But `esp_32_cam_code/README.md`
+says "the repository stays safe to publish", which is not true of its history. Correct that
+sentence or change the password before that repository is ever published.
+
+---
+
 ## Outstanding, and not an edit to anything
 
 Everything above is a correction to text that already exists. These are different — they are
