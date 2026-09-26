@@ -2,8 +2,8 @@
 Zone catalog for the active FireWatch site.
 
 Derived from `sites/<SITE_KEY>.json` via sites.py, so the zones, the facility
-graph and the routes can never describe different buildings. Set SITE_KEY=unit7
-(the demo factory) or SITE_KEY=home (the trial facility).
+graph and the routes can never describe different buildings. SITE_KEY=home (the
+trial facility) is the default; set SITE_KEY=unit7 for the demo factory.
 
 THIS IS STILL A MIRRORED CONTRACT with the mobile app's `mock_data.dart`: the
 ids, names, floors, detector ids and glyphs are what the phone renders against.

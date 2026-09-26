@@ -182,8 +182,8 @@ Each one keeps its default inside `docker-compose.yml`, so a missing or partial
 | Setting | Default | Meaning |
 |---|---|---|
 | `GOOGLE_API_KEY` | none | Your Gemini key. The vision service will not start without it. |
-| `SITE_KEY` | `unit7` | Which facility to load: `unit7` for demonstrations or `home` for the trials. It selects the zones and the evacuation graph together. |
-| `SITE_NAME` | `Unit 7` | Display name only. Blank uses the name inside the site file. |
+| `SITE_KEY` | `home` | Which facility to load: `home` for the trials or `unit7` for demonstrations. It selects the zones and the evacuation graph together. |
+| `SITE_NAME` | `Home` | Display name only. Blank uses the name inside the site file. |
 | `HAZARD_RADIUS_M` | from the site file | How close to the fire a route may pass. Blank uses 6 m for `unit7` and 2 m for `home`. |
 | `COOLDOWN_SECONDS` | `120` | Minimum seconds between two separate incidents in one zone. |
 | `CLEAR_AFTER_SECONDS` | `30` | Quiet time before an incident closes and the zone returns to clear. |
@@ -224,7 +224,7 @@ curl -sk https://localhost/api/classify/health  # fuel classifier
 
 # send a test alarm without lighting anything
 curl -X POST localhost:8090/api/test-alert -H 'content-type: application/json' \
-     -d '{"zoneId":"fabric-store"}'
+     -d '{"zoneId":"kitchen"}'
 ```
 
 ```powershell
@@ -236,7 +236,7 @@ curl.exe -sk https://localhost/api/classify/health  # fuel classifier
 
 # send a test alarm without lighting anything
 Invoke-RestMethod -Method Post -Uri http://localhost:8090/api/test-alert `
-  -ContentType application/json -Body '{"zoneId":"fabric-store"}'
+  -ContentType application/json -Body '{"zoneId":"kitchen"}'
 ```
 
 `Invoke-RestMethod` is used for the POST because PowerShell removes the quotation

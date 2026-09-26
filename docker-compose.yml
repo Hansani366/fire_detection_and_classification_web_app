@@ -164,8 +164,8 @@ services:
       # puts the database somewhere that does not persist.
       - FIREBASE_CREDENTIALS=/secrets/firebase-sa.json
       - DB_PATH=/data/alert.db
-      - SITE_KEY=${SITE_KEY:-unit7}
-      - SITE_NAME=${SITE_NAME:-Unit 7}
+      - SITE_KEY=${SITE_KEY:-home}
+      - SITE_NAME=${SITE_NAME:-Home}
       - HAZARD_RADIUS_M=${HAZARD_RADIUS_M:-}
       - COOLDOWN_SECONDS=${COOLDOWN_SECONDS:-120}
       - CLEAR_AFTER_SECONDS=${CLEAR_AFTER_SECONDS:-30}

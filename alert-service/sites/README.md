@@ -1,7 +1,7 @@
 # Site files
 
 One JSON file per facility. `SITE_KEY` picks which one the service loads
-(`unit7` by default); `sites.py` validates it at import and **raises** if it does
+(`home` by default); `sites.py` validates it at import and **raises** if it does
 not hold together, so a broken file stops the container at start-up with the
 reason in `docker compose logs alert-service` rather than during a fire.
 

@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 log = logging.getLogger("alert.sites")
 
 SITES_DIR = os.path.join(os.path.dirname(__file__), "sites")
-SITE_KEY = os.getenv("SITE_KEY", "unit7")
+SITE_KEY = os.getenv("SITE_KEY", "home")
 
 # Lets a demo retune the radius without editing a file and rebuilding. Read at
 # container start, so it needs `up -d --force-recreate`, not `restart`.
