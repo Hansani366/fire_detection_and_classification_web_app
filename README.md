@@ -157,9 +157,17 @@ Table 4 lists the technologies used to build each part of the system.
 **Installation:**
 
 ```bash
+# macOS or Linux
 cp sample.env .env          # then add your GOOGLE_API_KEY to .env
 docker compose up --build   # nginx creates its certificate during the build
 open https://localhost      # accept the certificate warning, then allow the camera
+```
+
+```powershell
+# Windows, PowerShell
+Copy-Item sample.env .env   # then add your GOOGLE_API_KEY to .env
+docker compose up --build   # nginx creates its certificate during the build
+start https://localhost     # accept the certificate warning, then allow the camera
 ```
 
 The certificate is self-signed, so the browser warns you the first time. This is
@@ -209,6 +217,7 @@ a fire:
 **Checking that it works:**
 
 ```bash
+# macOS or Linux
 curl -s  http://localhost:8090/health           # alert service
 curl -s  http://localhost:8022/health           # sensor bridge
 curl -sk https://localhost/api/classify/health  # fuel classifier
@@ -218,13 +227,38 @@ curl -X POST localhost:8090/api/test-alert -H 'content-type: application/json' \
      -d '{"zoneId":"fabric-store"}'
 ```
 
+```powershell
+# Windows, PowerShell. Write curl.exe, because plain `curl` is an alias for
+# Invoke-WebRequest and takes different options.
+curl.exe -s  http://localhost:8090/health           # alert service
+curl.exe -s  http://localhost:8022/health           # sensor bridge
+curl.exe -sk https://localhost/api/classify/health  # fuel classifier
+
+# send a test alarm without lighting anything
+Invoke-RestMethod -Method Post -Uri http://localhost:8090/api/test-alert `
+  -ContentType application/json -Body '{"zoneId":"fabric-store"}'
+```
+
+`Invoke-RestMethod` is used for the POST because PowerShell removes the quotation
+marks inside a JSON string before `curl.exe` receives it, which makes the request
+fail.
+
 **Tests.** These run offline and need no Docker:
 
 ```bash
+# macOS or Linux
 cd alert-service
 python3 -m pytest test_routing.py -q   # the escape route scenarios
 python3 -m pytest test_report.py -q    # the check applied before a report is released
 python3 -m pytest test_api.py -q       # every endpoint, over HTTP
+```
+
+```powershell
+# Windows. The launcher is called python, not python3.
+cd alert-service
+python -m pytest test_routing.py -q    # the escape route scenarios
+python -m pytest test_report.py -q     # the check applied before a report is released
+python -m pytest test_api.py -q        # every endpoint, over HTTP
 ```
 
 ## 5. Scope and design decisions
