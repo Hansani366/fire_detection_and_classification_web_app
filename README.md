@@ -1,6 +1,6 @@
-![FireWatch: a fire detection and classification research prototype. An isometric cutaway of an office floor shows a camera detecting a fire in one room while occupants follow an illuminated escape route to the exits.](docs/web_app_cover_image.png)
-
 # FireWatch — fire detection and classification web system
+
+![FireWatch: a fire detection and classification research prototype. An isometric cutaway of an office floor shows a camera detecting a fire in one room while occupants follow an illuminated escape route to the exits.](docs/web_app_cover_image.png)
 
 ## 1. Overview
 
