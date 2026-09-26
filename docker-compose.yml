@@ -129,7 +129,6 @@ services:
       - CLASSIFIER_URL=http://fire-classification-service:8024
       - FIRE_YOLO_URL=http://fire-detection-yolo-service:8000/detect
       - VLM_DETAILED_URL=http://vlm-service:8019/describe-image-detailed/
-      - SENSOR_LATEST_URL=http://esp32-sensor-service:8022/api/sensors/latest
     volumes:
       # Real recordings are bind-mounted rather than uploaded: nginx caps
       # bodies at 10M, and a recording is thousands of frames. Read-only, so a
@@ -142,7 +141,6 @@ services:
       - fire-classification-service
       - fire-detection-yolo-service
       - vlm-service
-      - esp32-sensor-service
 
   # ── Mobile Alert Service (FCM push + app state) ───────────────
   # Holds zones/incidents/history, receives confirmed-fire events, sends push.

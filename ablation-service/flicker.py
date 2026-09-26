@@ -1,12 +1,12 @@
 """
-Flame flicker from a sequence of frames — the batch twin of js/flicker.js.
+Flame flicker from a sequence of frames, measured from recorded frames.
 
-THE TWO IMPLEMENTATIONS MUST AGREE. The live tab measures this channel in the
-browser at 16 Hz; this measures it here from recorded frames. If they used
-different windows, different detrending or a different peak test, a recording
-and a live session would disagree about the same fire, and the ablation would
-be comparing the measurement rather than the system. Every constant comes from
-constants.py, which js/flicker.js mirrors by hand with a comment pointing here.
+THIS IS THE ONLY IMPLEMENTATION, AND IT SHOULD STAY THAT WAY. A browser twin
+once measured the same channel at 16 Hz for the live comparison tab, which was
+removed because nothing on a live feed carries a ground-truth label. A second
+implementation with different windows, different detrending or a different peak
+test would make the ablation compare the measurement rather than the system.
+Every constant comes from constants.py.
 
 A LOW FRAME RATE IS REFUSED, NOT APPROXIMATED. Real flame flickers at about
 2.1 Hz, so a source below ~12 Hz has a Nyquist limit under 6 Hz and folds that

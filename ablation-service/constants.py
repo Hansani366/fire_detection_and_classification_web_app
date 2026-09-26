@@ -138,13 +138,6 @@ MQ2_PPM_FULL_SCALE = 2000.0
 MQ7_PPM_FULL_SCALE = 500.0
 ADC_FULL_SCALE = 4095.0
 
-# ── Live session bounds ──────────────────────────────────────────────────────
-# predict() rebuilds features over the whole buffer every tick (O(n^2)), and
-# demo.py forbids trimming because cummax and persistence reach back to the
-# start. So we cap loudly and show the cap, rather than trimming silently and
-# letting the prediction drift away from what a batch score would give.
-LIVE_MAX_ROWS = 1800                       # 30 min at 1 Hz
-
 COMBOS = {
     1: "sensors only",
     2: "YOLO only",
@@ -306,6 +299,5 @@ def describe(manifest: dict) -> dict:
             "stale_after_s": SENSOR_STALE_AFTER_S,
             "gap_abort_s": SENSOR_GAP_ABORT_S,
         },
-        "live": {"max_rows": LIVE_MAX_ROWS},
         "from_manifest": manifest["config"],
     }

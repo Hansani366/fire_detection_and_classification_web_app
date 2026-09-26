@@ -20,9 +20,8 @@ EXPOSE 8023
 HEALTHCHECK --interval=15s --timeout=5s --start-period=40s \
   CMD curl -f http://localhost:8023/api/ablation/health || exit 1
 
-# Must stay single-worker: live sessions hold a per-experiment sequence buffer
-# and batch runs hold a job registry, both in-process. A second worker would
-# serve half the sessions and report the rest as missing -- the same reason
-# alert-service, esp32-cam-service and esp32-sensor-service are pinned to
-# one worker.
+# Must stay single-worker: batch runs hold their job registry in-process. A
+# second worker would serve half the runs and report the rest as missing -- the
+# same reason alert-service, esp32-cam-service and esp32-sensor-service are
+# pinned to one worker.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8023", "--workers", "1"]

@@ -141,7 +141,7 @@ def to_channels(detail: dict) -> dict[str, float]:
 
 
 class VlmHold:
-    """Sample-and-hold over the VLM, one per live session or experiment.
+    """Sample-and-hold over the VLM, one per experiment.
 
     Mirrors the generator's loop: invoke at most once per cooldown, hold the
     result in between, and age it. Time is counted in WINDOWS, because at the

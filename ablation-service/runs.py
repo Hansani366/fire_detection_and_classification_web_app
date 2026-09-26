@@ -10,8 +10,8 @@ WHY A THREAD AND NOT A PROCESS POOL. The heavy part -- building 96 features
 and running two models -- now happens in fire-classification-service, so what
 is left here is rules and arithmetic: a few hundred milliseconds on the full
 96-experiment split. asyncio.to_thread keeps the event loop responsive while it
-runs, which matters because the model call before it is I/O and a live session
-may be ticking alongside.
+runs, which matters because the model call before it is I/O and this service is
+pinned to one worker.
 
 WHAT AN EXPORT MUST CONTAIN TO BE CITABLE. Not just the numbers: the model's
 run_id, the checksums of the two joblibs, the checksum of the input data, the
