@@ -165,21 +165,34 @@ open https://localhost      # accept the certificate warning, then allow the cam
 The certificate is self-signed, so the browser warns you the first time. This is
 expected.
 
-**Configuration.** Settings are environment variables in `docker-compose.yml`
-and `.env`. Table 5 lists the ones you are most likely to change.
+**Configuration.** Every setting lives in `.env`, and Table 5 lists them all.
+Each one keeps its default inside `docker-compose.yml`, so a missing or partial
+`.env` still starts the system with the values shown here.
 
-**Table 5.** Configuration variables, their defaults and their effect.
+**Table 5.** Configuration settings, their defaults and their effect. All are set in `.env`.
 
-| Variable | Default | Meaning |
+| Setting | Default | Meaning |
 |---|---|---|
-| `GOOGLE_API_KEY` | none | Your Gemini key. Verification needs it. |
-| `SITE_KEY` | `unit7` | Which facility to load: `unit7` or `home`. |
-| `HAZARD_RADIUS_M` | from the site file | How close to the fire a route may pass. |
+| `GOOGLE_API_KEY` | none | Your Gemini key. The vision service will not start without it. |
+| `SITE_KEY` | `unit7` | Which facility to load: `unit7` for demonstrations or `home` for the trials. It selects the zones and the evacuation graph together. |
+| `SITE_NAME` | `Unit 7` | Display name only. Blank uses the name inside the site file. |
+| `HAZARD_RADIUS_M` | from the site file | How close to the fire a route may pass. Blank uses 6 m for `unit7` and 2 m for `home`. |
+| `COOLDOWN_SECONDS` | `120` | Minimum seconds between two separate incidents in one zone. |
+| `CLEAR_AFTER_SECONDS` | `30` | Quiet time before an incident closes and the zone returns to clear. |
+| `SENSOR_MQ2_WARN` / `_DANGER` | `400` / `800` | Combustible gas thresholds in ppm. |
+| `SENSOR_MQ7_WARN` / `_DANGER` | `35` / `100` | Carbon monoxide thresholds in ppm, following occupational exposure limits. |
+| `SENSOR_TEMP_WARN` / `_DANGER` | `45` / `60` | Temperature thresholds in degrees Celsius. |
+| `SENSOR_STALE_AFTER_S` | `15` | No sample for this long and the node reads stale rather than normal. |
+| `SENSOR_HISTORY_MAX` | `720` | Samples kept per node, about 36 minutes at one every 3 seconds. |
+| `SENSOR_INGEST_KEY` | blank | Shared secret for the sensor nodes. Blank accepts any device on the network. |
 | `HUMAN_MIN_CONF` | `0.40` | Confidence floor for counting a person. |
-| `SENSOR_INGEST_KEY` | empty | Shared secret for the sensor nodes. |
-| `COOLDOWN_SECONDS` | `120` | Minimum gap between two incidents in one zone. |
-| `CLEAR_AFTER_SECONDS` | `30` | Quiet time before an incident closes. |
-| `FIREBASE_CREDENTIALS` | `/secrets/firebase-sa.json` | Without it, pushes are logged instead of sent. |
+| `ESP32_CAM_URL` | blank | Address of the camera board. The dashboard can override it at runtime. |
+
+A few values in `docker-compose.yml` are deliberately **not** settings. The
+service URLs are Docker network names, and `DB_PATH` and `FIREBASE_CREDENTIALS`
+are container paths tied to the volume mounts beside them. Changing one of those
+without changing its mount would put the database somewhere that does not
+persist.
 
 Environment variables are read when a container starts. After changing one, run
 `docker compose up -d --force-recreate <service>`, because a plain restart keeps

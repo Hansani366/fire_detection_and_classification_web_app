@@ -63,15 +63,15 @@ services:
     ports:
       - "8022:8022"
     environment:
-      - SENSOR_STALE_AFTER_S=15    # no sample for this long → node reported stale
-      - SENSOR_HISTORY_MAX=720     # samples kept per node (≈36 min at 3s)
+      - SENSOR_STALE_AFTER_S=${SENSOR_STALE_AFTER_S:-15}
+      - SENSOR_HISTORY_MAX=${SENSOR_HISTORY_MAX:-720}
       - SENSOR_INGEST_KEY=${SENSOR_INGEST_KEY:-}   # empty = accept any LAN device
-      - SENSOR_MQ2_WARN=400
-      - SENSOR_MQ2_DANGER=800
-      - SENSOR_MQ7_WARN=35         # OSHA 8-hour CO ceiling
-      - SENSOR_MQ7_DANGER=100
-      - SENSOR_TEMP_WARN=45
-      - SENSOR_TEMP_DANGER=60
+      - SENSOR_MQ2_WARN=${SENSOR_MQ2_WARN:-400}
+      - SENSOR_MQ2_DANGER=${SENSOR_MQ2_DANGER:-800}
+      - SENSOR_MQ7_WARN=${SENSOR_MQ7_WARN:-35}
+      - SENSOR_MQ7_DANGER=${SENSOR_MQ7_DANGER:-100}
+      - SENSOR_TEMP_WARN=${SENSOR_TEMP_WARN:-45}
+      - SENSOR_TEMP_DANGER=${SENSOR_TEMP_DANGER:-60}
 
   # ── HTML/JS Frontend ──────────────────────────────────────────
   frontend:
@@ -157,20 +157,18 @@ services:
     ports:
       - "8090:8090"
     environment:
+      # Every value below with a ${...} default is set in .env. The defaults here
+      # are what the stack runs with when .env is absent, so a fresh clone still
+      # starts. The two paths are NOT settings: they are container paths tied to
+      # the volume mounts a few lines down, and changing one without the other
+      # puts the database somewhere that does not persist.
       - FIREBASE_CREDENTIALS=/secrets/firebase-sa.json
       - DB_PATH=/data/alert.db
-      # Which facility to load from alert-service/sites/. `unit7` is the demo
-      # hall; `home` is the trial facility. This picks the zone catalogue AND the
-      # evacuation graph together, so the two cannot describe different buildings.
-      - SITE_KEY=unit7
-      # Display name only. Leave unset to use the site file's own name.
-      - SITE_NAME=Unit 7
-      # Blank = use the radius in the site file (6 m for unit7, 2 m for home).
-      # Set it to retune live -- but note env is read at CONTAINER START, so use
-      # `up -d --force-recreate alert-service`; a plain `restart` keeps the old value.
-      - HAZARD_RADIUS_M=
-      - COOLDOWN_SECONDS=120     # min seconds between separate incidents in one zone
-      - CLEAR_AFTER_SECONDS=30   # no fire event for this long → auto-clear the incident
+      - SITE_KEY=${SITE_KEY:-unit7}
+      - SITE_NAME=${SITE_NAME:-Unit 7}
+      - HAZARD_RADIUS_M=${HAZARD_RADIUS_M:-}
+      - COOLDOWN_SECONDS=${COOLDOWN_SECONDS:-120}
+      - CLEAR_AFTER_SECONDS=${CLEAR_AFTER_SECONDS:-30}
     volumes:
       - ./alert-service/secrets:/secrets:ro   # drop firebase-sa.json in here to enable push
       - alert-data:/data                      # SQLite lives here (survives restarts)
