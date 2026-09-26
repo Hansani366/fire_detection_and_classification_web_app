@@ -493,7 +493,7 @@ td.zero { color: var(--ink3); }
           </tr></thead><tbody>`;
 
     for (const c of combos) {
-      const r = res.combos[c], w = r.window, e = r.event, lat = r.latency, vs = r.vs_combo6;
+      const r = res.combos[c], w = r.window, e = r.event, lat = r.latency, vs = r.vs_full;
       const m = r.modalities;
       html += `<tr class="${c === '6' ? 'is-full' : ''}">
         <td class="l"><span class="combo-num">${c}</span></td>
@@ -674,7 +674,7 @@ td.zero { color: var(--ink3); }
         Wrong fuel given detected: <b>${num(f.wrong_fuel_given_detected)}</b> ·
         abstain rate at gate ${num(res.fuel.gate_threshold, 2)}: <b>${num(f.abstain_rate)}</b>.
         Abstention is deliberately kept out of the detection table above — it changes the
-        denominator, which would make the six combinations incomparable.
+        denominator, which would make the five combinations incomparable.
       </div></div>`;
   }
 

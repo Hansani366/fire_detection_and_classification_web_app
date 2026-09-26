@@ -8,7 +8,7 @@ possibility of the research page and the live dashboard disagreeing about the
 same fire. The weights now live in exactly one service and everything that
 needs a verdict asks it.
 
-WHAT STAYED HERE. The six combination rules, the metrics, the ground-truth
+WHAT STAYED HERE. The five combination rules, the metrics, the ground-truth
 definitions and the temporal features the RULES need. Those are the research
 question. The model is not: combinations 1 and 6 are the trained arms, and
 their probabilities arrive from over there.

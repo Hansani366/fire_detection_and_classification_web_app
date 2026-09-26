@@ -278,56 +278,69 @@ first.
 
 ---
 
-## 13. Ch. 1 RO1.4 and §3.2.4 — four configurations described, six built
+## 13. Ch. 1 RO1.4 and §3.2.4 — four configurations described, five now built
 
-**As written**, in four places: RO1.4 compares "the vision only, sensor only, sensor and
+**Status: the code has changed. The thesis still needs the edit below.**
+
+**As written**, in five places: RO1.4 compares "the vision only, sensor only, sensor and
 vision fusion, and full configuration with vision language model verification"; §3.2.4 says
 switching a layer off "makes it possible to compare the four configurations"; §3.3.5 says
-each scenario is observed by "all four system configurations"; and §3.3.6 repeats it for the
-nuisance runs.
+each scenario is observed by "all four system configurations"; §3.3.6 repeats it for the
+nuisance runs; and §3.4.5 runs a Friedman test "across the four configurations".
 
-**What was built** — `ablation-service/constants.py`:
+**What was built, and what changed.** Three components give eight possible subsets. Six
+were built; one of those six has now been removed, leaving five:
 
-| | Combination |
+| | Combination | Status |
+|---|---|---|
+| 1 | sensors only | kept |
+| 2 | YOLO only | kept |
+| 3 | sensors + YOLO | kept, renumbered from 4 |
+| 4 | YOLO + VLM | kept, renumbered from 5 |
+| 5 | sensors + YOLO + VLM | kept, renumbered from 6 |
+| — | VLM only | **removed** |
+
+**Why "VLM only" was removed rather than corrected.** It described a configuration this
+architecture cannot run. Algorithm 3 opens with `if B is empty: return` — the vision
+language model is only ever invoked by a YOLO box and cannot open an incident by itself.
+The arm's own printed justification claimed it was "invoked on a FIXED cadence, never on
+the YOLO gate", but `ablation-service/vlm_adapter.py` states in its header that the
+generator runs the VLM only when YOLO fires and holds the verdict between calls. So the
+arm read YOLO-gated evidence while claiming not to, and there was no data behind the thing
+it claimed to measure. Its VLM confidence score survives as a feature, `combos._vlm_score`,
+because combination 4 scores against it — an observation the study uses is not the same as
+a configuration it claims to have measured.
+
+The other two of the eight are excluded for the same architectural reason: the empty set
+never alarms, and "sensors + VLM" needs the VLM to run with no detector.
+
+**Change to make.** Say five, name them, and pin each hypothesis to numbered combinations
+rather than to the phrase "vision only", which has two readings — combination 2, the bare
+detector, or combination 4, detector plus verification without sensors.
+
+> The prototype supports five configurations, listed in Table X. This study reports
+> combination 1 (sensors only), combination 2 (detector only), combination 3 (sensors and
+> detector fused), combination 4 (detector with vision language verification) and
+> combination 5 (the full system).
+
+Each pairing differs by exactly one component, which is what makes it an ablation:
+
+| Comparison | Isolates |
 |---|---|
-| 1 | sensors only |
-| 2 | YOLO only |
-| 3 | VLM only |
-| 4 | sensors + YOLO |
-| 5 | VLM + YOLO |
-| 6 | sensors + YOLO + VLM |
+| 5 against 3 | what the verification layer adds when sensors are present |
+| 5 against 4 | what the sensors add to a verified vision system |
+| 3 against 2 | what the sensors add to a bare detector |
+| 2 against 1 | vision against sensing, each alone |
 
-Six, not four — a superset rather than a shortfall, so the artefact does more than the
-thesis claims, which is the better direction to be wrong in.
+**This reaches RO1.3, and it is the reason to be exact.** RO1.3 promises that verification
+cuts false alarms by at least 50 per cent "compared with the vision only configuration".
+The comparison that isolates the verification layer is **5 against 3**, because those two
+differ by the VLM alone. H1 as written compares the full system against "vision only",
+which differs by two components at once, so whatever number it produces cannot be
+attributed to the verification layer. Restate H1 as a numbered pair.
 
-**But "vision only" is ambiguous, and that part is not cosmetic.** It could mean combination
-2 (the detector alone) or combination 5 (detector plus vision-language verification, still
-no sensors). Both hypotheses are stated against it:
-
-> H1: The full system ... produces a lower false alarm rate on the nuisance test set than
-> **the vision only configuration**.
->
-> H2: The sensor first trigger produces a shorter time to detection than **the vision only
-> configuration** for smouldering fires.
-
-Read against combination 2, H1 measures the sensors *and* the verification layer together.
-Read against combination 5, it isolates the sensors alone. Those are different hypotheses
-with different expected effects, and §3.4.4 commits to a McNemar test on paired runs — a
-test whose result cannot be interpreted until the pairing is named.
-
-**Change to make.** Say six, name them, and pin each hypothesis to numbered combinations:
-
-> The prototype supports six configurations, listed in Table X. This study reports
-> combination 1 (sensors only), combination 2 (detector only), combination 4 (sensors and
-> detector fused) and combination 6 (the full system). H1 compares combination 6 against
-> combination 5; H2 compares combination 4 against combination 2.
-
-Substitute whichever pairing you actually intend — the point is that a number appears rather
-than a phrase with two readings. `GET /api/ablation/config` renders each rule from the
-constants the code executes, so Chapter 4's table can be generated from the running system
-instead of transcribed.
-
----
+`GET /api/ablation/config` renders each rule from the constants the code executes, so
+Chapter 4's table can be generated from the running system rather than transcribed.
 
 ## 14. Ch. 1 RO3.4 — expert evaluation — **TODO, not software**
 
@@ -598,6 +611,112 @@ One thing to note while writing §3.2.5: the **live dashboard never measured fli
 `escalation.js` posts no `flicker_hz` to the classifier, so the live fuel verdict uses the
 quiet default for that channel while the ablation arms measure it from frames. State this
 where the fuel classifier's inputs are listed.
+
+---
+
+## 19. §3.3.7 and §3.4.8 — the route evidence is now equal across both sites
+
+**Status: the code and the site files have changed. Chapter 3 needs the numbers below.**
+
+**What was wrong.** The two site profiles were not equally evidenced, and two measures
+Chapter 3 promises could never produce a number.
+
+- The home profile had a written-down answer for all 8 of its zones. The industrial
+  profile had 3 of 7, so a wrong route in `cutting-floor`, `sewing-a`, `warehouse` or
+  `finishing` would not have been caught while route validity still read 100 per cent.
+- No case in either file carried `lengthM`, so the optimality gap of §3.4.8 — generated
+  length against the manual best — had no denominator and silently reported nothing.
+- No case expected a refuge, so the correct-refusal measure could only ever be zero. The
+  refusal behaviour RO2.2 requires was implemented and never exercised.
+- The industrial hazard radius of 6.0 m carried no written justification, while the home's
+  2.0 m did.
+
+**What was done.** Every expected answer was derived by exhaustive enumeration of all
+simple paths — deliberately not by the router, which uses Dijkstra — and then cross-checked
+against the router. Both agree on all 15 zones, which is what makes the ground truth a
+check rather than a copy.
+
+| | Home | Industrial |
+|---|---|---|
+| Zones | 8 | 7 |
+| Exits | 2 | 4 |
+| Baseline cases, all with a hand-derived length | 8 of 8 | 7 of 7 |
+| Blocked-exit scenarios | 8 | 9 |
+| Of those, expecting a refuge | 3 | 2 |
+| **Total combinations** | **16** | **16** |
+
+A new `routeScenarios` block in each site file holds fire location combined with one or
+more blocked exits, which the zone-keyed ground truth cannot express because it is keyed by
+zone alone. `sites.py` now refuses to load a site whose baseline case declares no length,
+or whose scenario names an unknown zone or exit, so this evidence cannot quietly rot.
+
+**One measurement artefact was removed at the same time.** `to_record()` rounded `lengthM`
+to one decimal, which is right for a phone showing a distance to walk but put the stored
+length on a coarser grid than the ground truth. The optimality gap then read up to 0.4 per
+cent against routes that were in fact optimal. The record now keeps two decimals and the
+wire still carries one, and the measured gap is exactly 0.00 per cent on all 15 zones.
+
+**Change to make.** §3.3.7 currently says "At least eight combinations of fire location and
+blocked exit are tested" while Ch. 1 RO2.3 says "at least fifteen" — the inconsistency
+already noted in section 6 above. Both are now satisfied and the sentence can state the
+real figure:
+
+> Route generation is tested on 32 combinations of fire location and blocked exit, 16 on
+> each site: 15 baseline cases covering every zone of both facilities, and 17 scenarios in
+> which one or more exits are blocked, of which 5 expect a refuge instruction because no
+> exit remains reachable.
+
+Report the optimality gap as 0.00 per cent across all 15 baseline zones, and say that the
+ground truth was derived by exhaustive path enumeration independent of the shortest-path
+implementation under test. That sentence is worth more to an examiner than the figure.
+
+**Still open, and not closed by this change.** The home graph is a tree — 17 nodes and 16
+edges — so there is exactly one path from any room to any exit and the search never
+chooses between alternatives. The industrial graph has two independent cycles and does
+choose. That asymmetry is a property of the buildings, not of the code, and Chapter 5
+should say which site each route claim rests on. The default site is still `home` while the
+stated scope is industrial.
+
+---
+
+## 20. Seven faults fixed in the alarm path, and what Chapter 4 must now say
+
+**Status: the code has changed. Most of these bring the artefact back to what Chapter 3
+already describes, so they remove thesis edits rather than creating them.** The two
+exceptions are marked. The full audit is in `AUDIT_FINDINGS.md` at the repository root.
+
+| # | What was wrong | Effect on the thesis |
+|---|---|---|
+| 1 | `sceneEvidence()` was declared inside `reportFire` and called from `detectOnce`, so every call raised a scope error and the camera could never raise an alarm | None. Algorithm 2 now runs as §3.2.5.2 describes |
+| 2 | Algorithm 2's safety latch was absent, so one verification timeout with normal gas cleared a standing fire alarm | None. §3.2.5.2 and the README already describe the correct behaviour |
+| 3 | The alarm was posted once on the rising edge and never again, so the 30 s watchdog resolved a fire that was still burning | **Chapter 4 must describe the keep-alive** |
+| 4 | Of the two posts per fire, the one carrying the description always lost the race, so no live incident ever stored a situation report | None. RO3.1 now produces what it claims |
+| 5 | `/api/test-alert` passed no scene, so demo alerts carried no report at all | None |
+| 6 | Incidents were seeded with a synthetic muster of 42 present of 45, printed on the officer's report as though measured | **§3.4.8's head-count comparison changes — see below** |
+| 7 | The results export read `data_source` while the health payload builds `trainedOn`, so the download returned an error | None |
+
+**Item 3 — the keep-alive, for Chapter 4.** `alert-service` resolves an incident that has
+had no fire event for `CLEAR_AFTER_SECONDS` (30 s), which §3.2.5.2 states as "no new event
+for 30 s". That rule assumes something keeps reporting. The dashboard now re-posts the open
+alarm every 10 s while the alarm stands, giving three chances to land inside the server's
+window so one dropped request cannot resolve a live incident. The refresh carries no scene,
+so the vision language model is still called once per alarm and the cost per incident in
+§3.4.6 is unchanged.
+
+**Item 6 — the muster figures, for §3.4.8.** §3.4.8 compares the camera head-count against
+the occupant check-out count. The stored muster columns are no longer seeded with anything:
+when the human detector never supplied a count, the API returns `source: "unknown"` with
+both figures null and the officer's report prints "No head-count recorded". Any table in
+Chapter 5 that would have shown 42 of 45 for an incident the detector never saw must show
+that the count was not recorded instead. This is the honest version of the same measure —
+an invented occupancy figure on a safety report cannot be told apart from a measured one,
+and three people unaccounted for is exactly the number that decides whether anyone goes
+back inside.
+
+The same invented constants still sit in the mobile app's own fixtures
+(`lib/data/api/api_fire_repository.dart`, `lib/data/mock/mock_data.dart`). They are
+unreachable in the interface, because no widget renders the muster roll, so they are listed
+as extra code in `AUDIT_FINDINGS.md` rather than fixed here.
 
 ---
 

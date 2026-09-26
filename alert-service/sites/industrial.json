@@ -9,6 +9,7 @@
     "designH": 348
   },
   "hazardRadiusM": 6.0,
+  "hazardRadiusNote": "Three times the home's 2.0 m, because this is a 34 x 30 m hall rather than a house. The bays are 9-12 m across, so a 2 m radius would cut almost nothing and every route would read as unaffected; at 6.0 m a fire reliably cuts the exit beside it while leaving the far side of the hall usable, which is the behaviour the route tests are there to check.",
   "defaultZoneId": "fabric-store",
   "zones": [
     {
@@ -347,18 +348,168 @@
   "groundTruth": {
     "fabric-store": {
       "exitId": "exit-east",
+      "lengthM": 29.35,
       "refugeExpected": false,
       "why": "The north door is 5.7 m from the fire and is cut, so the route runs the length of the corridor to the east exit."
     },
+    "cutting-floor": {
+      "exitId": "exit-north",
+      "lengthM": 19.77,
+      "refugeExpected": false,
+      "why": "No exit is cut. The north door is nearest at 19.8 m, against 23.0 m east and 29.2 m south."
+    },
     "dyeing": {
       "exitId": "exit-north",
+      "lengthM": 13.57,
       "refugeExpected": false,
       "why": "13.6 m north against 31.3 m east, measured along the graph."
     },
+    "sewing-a": {
+      "exitId": "exit-south",
+      "lengthM": 19.61,
+      "refugeExpected": false,
+      "why": "The east fire exit is 5.1 m from the fire and is cut. The south door at 19.6 m is then the nearest of the three that remain."
+    },
+    "warehouse": {
+      "exitId": "exit-north",
+      "lengthM": 19.97,
+      "refugeExpected": false,
+      "why": "The east fire exit is cut by the fire. The north door at 20.0 m beats the south door at 29.4 m."
+    },
     "boiler": {
       "exitId": "exit-bay",
+      "lengthM": 13.39,
       "refugeExpected": false,
       "why": "The south door is 5.9 m from the fire and is cut; the loading bay is the next nearest."
+    },
+    "finishing": {
+      "exitId": "exit-south",
+      "lengthM": 19.41,
+      "refugeExpected": false,
+      "why": "No exit is cut. The south door is nearest at 19.4 m, against 20.4 m to the loading bay."
     }
-  }
+  },
+  "routeScenarios": [
+    {
+      "id": "industrial-blocked-01",
+      "fireZone": "fabric-store",
+      "blockedExits": [
+        "exit-east"
+      ],
+      "expect": {
+        "refugeExpected": false,
+        "exitId": "exit-south",
+        "lengthM": 35.61
+      },
+      "why": "The baseline route uses the exit-east at 29.35 m. With it blocked the occupant is sent to the exit-south instead, at 35.61 m."
+    },
+    {
+      "id": "industrial-blocked-02",
+      "fireZone": "cutting-floor",
+      "blockedExits": [
+        "exit-north"
+      ],
+      "expect": {
+        "refugeExpected": false,
+        "exitId": "exit-east",
+        "lengthM": 22.95
+      },
+      "why": "The baseline route uses the exit-north at 19.77 m. With it blocked the occupant is sent to the exit-east instead, at 22.95 m."
+    },
+    {
+      "id": "industrial-blocked-03",
+      "fireZone": "dyeing",
+      "blockedExits": [
+        "exit-north"
+      ],
+      "expect": {
+        "refugeExpected": false,
+        "exitId": "exit-east",
+        "lengthM": 29.55
+      },
+      "why": "The baseline route uses the exit-north at 13.57 m. With it blocked the occupant is sent to the exit-east instead, at 29.55 m."
+    },
+    {
+      "id": "industrial-blocked-04",
+      "fireZone": "sewing-a",
+      "blockedExits": [
+        "exit-south"
+      ],
+      "expect": {
+        "refugeExpected": false,
+        "exitId": "exit-bay",
+        "lengthM": 20.59
+      },
+      "why": "The baseline route uses the exit-south at 19.61 m. With it blocked the occupant is sent to the exit-bay instead, at 20.59 m."
+    },
+    {
+      "id": "industrial-blocked-05",
+      "fireZone": "warehouse",
+      "blockedExits": [
+        "exit-north"
+      ],
+      "expect": {
+        "refugeExpected": false,
+        "exitId": "exit-south",
+        "lengthM": 29.41
+      },
+      "why": "The baseline route uses the exit-north at 19.97 m. With it blocked the occupant is sent to the exit-south instead, at 29.41 m."
+    },
+    {
+      "id": "industrial-blocked-06",
+      "fireZone": "boiler",
+      "blockedExits": [
+        "exit-bay"
+      ],
+      "expect": {
+        "refugeExpected": false,
+        "exitId": "exit-east",
+        "lengthM": 31.1
+      },
+      "why": "The baseline route uses the exit-bay at 13.39 m. With it blocked the occupant is sent to the exit-east instead, at 31.1 m."
+    },
+    {
+      "id": "industrial-blocked-07",
+      "fireZone": "finishing",
+      "blockedExits": [
+        "exit-south"
+      ],
+      "expect": {
+        "refugeExpected": false,
+        "exitId": "exit-bay",
+        "lengthM": 20.39
+      },
+      "why": "The baseline route uses the exit-south at 19.41 m. With it blocked the occupant is sent to the exit-bay instead, at 20.39 m."
+    },
+    {
+      "id": "industrial-refuge-08",
+      "fireZone": "fabric-store",
+      "blockedExits": [
+        "exit-east",
+        "exit-south",
+        "exit-bay"
+      ],
+      "expect": {
+        "refugeExpected": true,
+        "exitId": null,
+        "lengthM": null
+      },
+      "why": "The fire cuts the north door, and the scenario blocks the other three. Nothing is reachable, so the correct answer is to shelter rather than to route someone past the fire."
+    },
+    {
+      "id": "industrial-refuge-09",
+      "fireZone": "boiler",
+      "blockedExits": [
+        "exit-east",
+        "exit-north",
+        "exit-bay"
+      ],
+      "expect": {
+        "refugeExpected": true,
+        "exitId": null,
+        "lengthM": null
+      },
+      "why": "The fire cuts the south door and the scenario blocks the rest. The refusal case for the industrial unit."
+    }
+  ]
 }

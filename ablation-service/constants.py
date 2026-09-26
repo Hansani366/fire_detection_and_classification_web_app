@@ -1,5 +1,5 @@
 """
-Every threshold the six combinations use, in one frozen place.
+Every threshold the five combinations use, in one frozen place.
 
 WHY THIS FILE EXISTS AT ALL. The page prints each combination's rule so it can
 be copied into the paper. If the printed text and the executed code were
@@ -138,14 +138,62 @@ MQ2_PPM_FULL_SCALE = 2000.0
 MQ7_PPM_FULL_SCALE = 500.0
 ADC_FULL_SCALE = 4095.0
 
+"""FIVE COMBINATIONS, NOT SIX, AND WHY THE SIXTH IS GONE.
+
+Three components give eight possible subsets. Five of them are meaningful here:
+
+    1  sensors only              4  YOLO + VLM
+    2  YOLO only                 5  sensors + YOLO + VLM  (the full system)
+    3  sensors + YOLO
+
+The other three cannot be measured, and it is the architecture that rules them
+out rather than a shortage of effort:
+
+  * The empty set switches nothing on, so it never alarms and answers nothing.
+  * "sensors + VLM" needs the VLM to run with no detector. Algorithm 3 opens
+    with "if B is empty: return" -- the VLM is only ever invoked by a YOLO box
+    and cannot open an incident by itself, so removing YOLO silences it too.
+  * "VLM only" fails for the same reason, and it used to be combination 3 here.
+    Its printed rule claimed a fixed cadence, "never on the YOLO gate", but
+    vlm_adapter's own header states the generator runs the VLM only when YOLO
+    fires and holds the verdict between calls. So the arm read YOLO-gated
+    evidence while claiming not to, and its number described a configuration
+    this system cannot run. It is removed rather than corrected, because there
+    is no data behind the thing it claimed to measure.
+
+The VLM's confidence is still needed -- combination 4 scores against it -- so it
+survives as a feature in combos._vlm_score. A score is an observation; an arm is
+a claim about a deployable configuration. Dropping the arm does not drop the
+observation.
+
+WHICH COMPARISON ANSWERS WHICH QUESTION. Each pairing differs by exactly one
+component, which is the whole point of numbering them:
+
+    5 against 3   what the VLM verification adds when sensors are present
+    5 against 4   what the sensors add to a verified vision system
+    3 against 2   what the sensors add to a bare detector
+    2 against 1   vision against sensing, each alone
+
+RO1.3's claim -- that verification cuts false alarms by at least half -- is
+5 against 3, because those two differ only by the VLM.
+"""
+
 COMBOS = {
     1: "sensors only",
     2: "YOLO only",
-    3: "VLM only",
-    4: "sensors + YOLO",
-    5: "VLM + YOLO",
-    6: "sensors + YOLO + VLM",
+    3: "sensors + YOLO",
+    4: "YOLO + VLM",
+    5: "sensors + YOLO + VLM",
 }
+
+# The full system. Every comparison is made against this arm, so it is named
+# once here rather than written as a literal in metrics.py and main.py -- which
+# is how renumbering silently pointed the McNemar test at the wrong column.
+FULL_COMBO = 5
+
+# The arm the full system is compared against to isolate the verification layer
+# (RO1.3). It differs from FULL_COMBO by the VLM and nothing else.
+NO_VLM_COMBO = 3
 
 # Which raw modalities each combination is allowed to see. Used to zero the
 # channels a combination must not read, and rendered in the UI as the ablation
@@ -153,10 +201,9 @@ COMBOS = {
 COMBO_MODALITIES = {
     1: {"sensors": True,  "yolo": False, "vlm": False},
     2: {"sensors": False, "yolo": True,  "vlm": False},
-    3: {"sensors": False, "yolo": False, "vlm": True},
-    4: {"sensors": True,  "yolo": True,  "vlm": False},
-    5: {"sensors": False, "yolo": True,  "vlm": True},
-    6: {"sensors": True,  "yolo": True,  "vlm": True},
+    3: {"sensors": True,  "yolo": True,  "vlm": False},
+    4: {"sensors": False, "yolo": True,  "vlm": True},
+    5: {"sensors": True,  "yolo": True,  "vlm": True},
 }
 
 
@@ -212,18 +259,6 @@ def rule_text(manifest: dict) -> dict[int, dict]:
         },
         3: {
             "name": COMBOS[3],
-            "decided_by": "rule over vlm-service /describe-image-detailed/",
-            "rule": f"max(vlm_flame_conf, vlm_smoke_conf) > "
-                    f"{VLM_CONFIRM_THRESHOLD} AND vlm_visual_conf >= "
-                    f"{VLM_VIEW_FLOOR}",
-            "score": "max(vlm_flame_conf, vlm_smoke_conf)",
-            "why": f"{VLM_CONFIRM_THRESHOLD} is the generator's "
-                   f"VLM_CONFIRM_THRESHOLD. Invoked on a FIXED "
-                   f"{VLM_COOLDOWN_S:g}s cadence, never on the YOLO gate -- a "
-                   f"VLM-only arm that waited for YOLO would not be VLM-only.",
-        },
-        4: {
-            "name": COMBOS[4],
             "decided_by": "rule: combination 2 confirmed by combination 1",
             "rule": f"alarm(2) now AND alarm(1) at any point in the last "
                     f"{SENSOR_AGREE_WINDOWS} windows",
@@ -232,30 +267,38 @@ def rule_text(manifest: dict) -> dict[int, dict]:
             "why": f"The generator lags MQ-2 by 14s and MQ-7 by 22s, so "
                    f"instantaneous agreement between a camera and a gas sensor "
                    f"is physically impossible. {SENSOR_AGREE_WINDOWS}s is under "
-                   f"both lags -- as tight as the chemistry permits.",
+                   f"both lags -- as tight as the chemistry permits. This is the "
+                   f"arm combination {FULL_COMBO} is compared against to isolate "
+                   f"the verification layer, because the two differ by the VLM "
+                   f"and nothing else.",
+        },
+        4: {
+            "name": COMBOS[4],
+            "decided_by": "rule: the dashboard's deployed alarm logic",
+            "rule": "alarm(2) now AND the held VLM verdict is confirmed",
+            "score": "min(score(2), held VLM confidence)",
+            "why": f"This is verbatim the rule the live system already runs: "
+                   f"YOLO proposes, the VLM confirms, and the verdict is held "
+                   f"between invocations. The VLM confidence it scores against "
+                   f"is max(vlm_flame_conf, vlm_smoke_conf), thresholded at "
+                   f"{VLM_CONFIRM_THRESHOLD} by the generator. Comparing "
+                   f"combination {FULL_COMBO} against this one isolates what the "
+                   f"sensors add to an already verified vision system.",
         },
         5: {
             "name": COMBOS[5],
-            "decided_by": "rule: the dashboard's deployed alarm logic",
-            "rule": "alarm(2) now AND the held VLM verdict is confirmed",
-            "score": "min(score(2), held score(3))",
-            "why": "This is verbatim the rule the live system already runs: "
-                   "YOLO proposes, the VLM confirms, and the verdict is held "
-                   "between invocations.",
-        },
-        6: {
-            "name": COMBOS[6],
             "decided_by": "fusion_model.joblib (StandardScaler -> MLP(128,64), "
                           "96 features) over sensor_model.joblib",
             "rule": f"argmax(p) != no_fire, after the manifest's causal "
                     f"{smooth}-window smoothing; the 4-class fuel label is the "
                     f"argmax of that same smoothed vector",
             "score": "1 - p[no_fire]  (for the ROC curve only)",
-            "why": "The only combination that uses a trained fusion model. Note "
-                   "it CONTAINS combination 1: four of its 96 features are "
-                   "sensor_model's probabilities, so 'fusion beats sensors' is "
-                   "partly tautological and the informative comparison is "
-                   "against combination 4.",
+            "why": f"The only combination that uses a trained fusion model. Note "
+                   f"it CONTAINS combination 1: four of its 96 features are "
+                   f"sensor_model's probabilities, so 'fusion beats sensors' is "
+                   f"partly tautological and the informative comparison is "
+                   f"against combination {NO_VLM_COMBO}, which differs from this "
+                   f"one by the VLM alone.",
         },
     }
 

@@ -164,6 +164,71 @@ def test_declared_ground_truth_matches_what_the_router_does(site):
         assert r.is_refuge == gt["refugeExpected"], zone_id
         if not gt["refugeExpected"]:
             assert r.exit_id == gt["exitId"], zone_id
+            # The length is checked too, not just the exit. The optimality gap
+            # divides by this number, so a declared length that no longer matches
+            # would report a gap against a route nobody walked.
+            assert abs(r.length_m - gt["lengthM"]) < 0.01, (zone_id, r.length_m)
+
+
+@pytest.mark.parametrize("site", [HOME, INDUSTRIAL], ids=["home", "industrial"])
+def test_every_zone_has_a_written_down_answer(site):
+    """Ground truth must cover the whole building, not the convenient part of it.
+
+    The industrial profile once had answers for three of its seven zones, so a
+    wrong route in any of the other four would have gone unnoticed while the
+    route-validity rate still read 100 per cent.
+    """
+    missing = {z["id"] for z in site.zones} - set(site.ground_truth)
+    assert not missing, missing
+    for zone_id, gt in site.ground_truth.items():
+        if not gt["refugeExpected"]:
+            assert gt.get("lengthM") is not None, zone_id
+
+
+@pytest.mark.parametrize("site", [HOME, INDUSTRIAL], ids=["home", "industrial"])
+def test_blocked_exit_scenarios_match_what_the_router_does(site):
+    """Fire location combined with a blocked exit — Section 3.3.7's real test.
+
+    The zone-keyed ground truth above can only express "fire here, nothing
+    blocked". These are the combinations, and they are where a reroute is forced
+    rather than merely available.
+    """
+    assert site.route_scenarios, f"{site.key} declares no blocked-exit scenarios"
+    for sc in site.route_scenarios:
+        r = _route(site, sc["fireZone"], blocked=tuple(sc["blockedExits"]))
+        exp = sc["expect"]
+        assert r.is_refuge == exp["refugeExpected"], sc["id"]
+        if not exp["refugeExpected"]:
+            assert r.exit_id == exp["exitId"], sc["id"]
+            assert abs(r.length_m - exp["lengthM"]) < 0.01, (sc["id"], r.length_m)
+            # A blocked exit must never be the answer.
+            assert r.exit_id not in sc["blockedExits"], sc["id"]
+
+
+@pytest.mark.parametrize("site", [HOME, INDUSTRIAL], ids=["home", "industrial"])
+def test_the_refusal_case_is_actually_exercised(site):
+    """RO2.2 requires a refuge instruction when no exit is reachable.
+
+    The code has always implemented it, but no scenario reached it, so the
+    correct-refusal measure could only ever report zero — which reads as "never
+    tested" and "never passed" in exactly the same way.
+    """
+    refuges = [s for s in site.route_scenarios if s["expect"]["refugeExpected"]]
+    assert refuges, f"{site.key} has no scenario where every exit is cut"
+    for sc in refuges:
+        r = _route(site, sc["fireZone"], blocked=tuple(sc["blockedExits"]))
+        assert r.is_refuge, sc["id"]
+        assert r.exit_id is None, sc["id"]
+        assert r.refuge_node is not None, sc["id"]
+
+
+@pytest.mark.parametrize("site", [HOME, INDUSTRIAL], ids=["home", "industrial"])
+def test_both_sites_carry_comparable_route_evidence(site):
+    """Section 3.3.7 asks for at least eight fire-location / blocked-exit
+    combinations. Both profiles must meet it, not just the one the results
+    chapter happens to report."""
+    total = len(site.ground_truth) + len(site.route_scenarios)
+    assert total >= 8, (site.key, total)
 
 
 def test_a_broken_site_file_refuses_to_load():

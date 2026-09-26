@@ -324,39 +324,157 @@
   "groundTruth": {
     "kitchen": {
       "exitId": "exit-north",
+      "lengthM": 5.0,
       "refugeExpected": false,
       "why": "The kitchen's own fire does not block its door (2.36 m away, radius 2.0), so the occupant leaves through the dining area to the front door."
     },
     "dining": {
       "exitId": "exit-south",
+      "lengthM": 9.8,
       "refugeExpected": false,
       "why": "Scenario 2. The fire sits beside the front door, which is the nearest exit by straight line and the wrong one. The correct route reverses and runs south through the living area."
     },
     "living": {
       "exitId": "exit-south",
-      "refugeExpected": false
+      "lengthM": 4.78,
+      "refugeExpected": false,
+      "why": "The fire sits in the middle of the house. Both doors stay open, and the back door is the nearer of the two along the graph."
     },
     "verander": {
       "exitId": "exit-north",
+      "lengthM": 9.7,
       "refugeExpected": false,
       "why": "Scenario 3. The back door itself is clear, but the fire sits across the only path to it, so the route runs the length of the house to the front door instead."
     },
+    "bedroom-west": {
+      "exitId": "exit-south",
+      "lengthM": 10.06,
+      "refugeExpected": false,
+      "why": "Nothing is cut, and the back door is nearer than the front along the hallway."
+    },
+    "bedroom-southwest": {
+      "exitId": "exit-south",
+      "lengthM": 6.22,
+      "refugeExpected": false,
+      "why": "Nothing is cut. The shortest walk is south to the back door."
+    },
     "bedroom-northeast": {
       "exitId": "exit-north",
+      "lengthM": 5.41,
       "refugeExpected": false,
       "why": "Scenario 1. Far from both doors, and the obvious route is also the correct one."
     },
     "bedroom-southeast": {
       "exitId": "exit-south",
-      "refugeExpected": false
-    },
-    "bedroom-west": {
-      "exitId": "exit-south",
-      "refugeExpected": false
-    },
-    "bedroom-southwest": {
-      "exitId": "exit-south",
-      "refugeExpected": false
+      "lengthM": 10.48,
+      "refugeExpected": false,
+      "why": "Nothing is cut. The back door is the nearer of the two from this corner."
     }
-  }
+  },
+  "routeScenarios": [
+    {
+      "id": "home-blocked-01",
+      "fireZone": "kitchen",
+      "blockedExits": [
+        "exit-north"
+      ],
+      "expect": {
+        "refugeExpected": false,
+        "exitId": "exit-south",
+        "lengthM": 16.2
+      },
+      "why": "The baseline route uses the exit-north at 5.0 m. With it blocked the occupant is sent to the exit-south instead, at 16.2 m."
+    },
+    {
+      "id": "home-blocked-02",
+      "fireZone": "dining",
+      "blockedExits": [
+        "exit-south"
+      ],
+      "expect": {
+        "refugeExpected": true,
+        "exitId": null,
+        "lengthM": null
+      },
+      "why": "With the exit-south blocked, the fire has already cut the only other way out, so there is no safe exit and the correct answer is to shelter in place."
+    },
+    {
+      "id": "home-blocked-03",
+      "fireZone": "living",
+      "blockedExits": [
+        "exit-south"
+      ],
+      "expect": {
+        "refugeExpected": true,
+        "exitId": null,
+        "lengthM": null
+      },
+      "why": "With the exit-south blocked, the fire has already cut the only other way out, so there is no safe exit and the correct answer is to shelter in place."
+    },
+    {
+      "id": "home-blocked-04",
+      "fireZone": "verander",
+      "blockedExits": [
+        "exit-north"
+      ],
+      "expect": {
+        "refugeExpected": true,
+        "exitId": null,
+        "lengthM": null
+      },
+      "why": "With the exit-north blocked, the fire has already cut the only other way out, so there is no safe exit and the correct answer is to shelter in place."
+    },
+    {
+      "id": "home-blocked-05",
+      "fireZone": "bedroom-west",
+      "blockedExits": [
+        "exit-south"
+      ],
+      "expect": {
+        "refugeExpected": false,
+        "exitId": "exit-north",
+        "lengthM": 11.15
+      },
+      "why": "The baseline route uses the exit-south at 10.06 m. With it blocked the occupant is sent to the exit-north instead, at 11.15 m."
+    },
+    {
+      "id": "home-blocked-06",
+      "fireZone": "bedroom-southwest",
+      "blockedExits": [
+        "exit-south"
+      ],
+      "expect": {
+        "refugeExpected": false,
+        "exitId": "exit-north",
+        "lengthM": 14.97
+      },
+      "why": "The baseline route uses the exit-south at 6.22 m. With it blocked the occupant is sent to the exit-north instead, at 14.97 m."
+    },
+    {
+      "id": "home-blocked-07",
+      "fireZone": "bedroom-northeast",
+      "blockedExits": [
+        "exit-north"
+      ],
+      "expect": {
+        "refugeExpected": false,
+        "exitId": "exit-south",
+        "lengthM": 16.61
+      },
+      "why": "The baseline route uses the exit-north at 5.41 m. With it blocked the occupant is sent to the exit-south instead, at 16.61 m."
+    },
+    {
+      "id": "home-blocked-08",
+      "fireZone": "bedroom-southeast",
+      "blockedExits": [
+        "exit-south"
+      ],
+      "expect": {
+        "refugeExpected": false,
+        "exitId": "exit-north",
+        "lengthM": 11.56
+      },
+      "why": "The baseline route uses the exit-south at 10.48 m. With it blocked the occupant is sent to the exit-north instead, at 11.56 m."
+    }
+  ]
 }

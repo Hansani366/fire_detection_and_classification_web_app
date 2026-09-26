@@ -146,7 +146,7 @@ def _score_frame(frame: pd.DataFrame, dataset: dict, combo_ids: list[int],
 async def _run_replay(dataset_id: str, combo_ids: list[int], client,
                       experiment_ids: list[str] | None, ground_truth: str,
                       run: dict) -> dict:
-    """Replay one vendored split through all six combinations."""
+    """Replay one vendored split through all five combinations."""
     spec = REPLAY_SETS[dataset_id]
     path = DATA_DIR / spec["file"]
     frame = pd.read_csv(path)
@@ -194,8 +194,12 @@ def _window_table(features, truth, scored, classes) -> list[dict]:
         rows[f"combo{c}_alarm"] = scored["alarm"][c].to_numpy().astype(int)
         rows[f"combo{c}_score"] = scored["score"][c].to_numpy().round(6)
     if scored.get("fuel") is not None:
-        rows["combo6_class"] = scored["fuel"]["predicted_class"].to_numpy()
-        rows["combo6_confidence"] = scored["fuel"]["confidence"].to_numpy().round(6)
+        # Named from K.FULL_COMBO, because only the full system carries a fuel
+        # verdict. Hardcoding the number here meant the exported columns kept
+        # the name of an arm that no longer exists after the arms were renumbered.
+        rows[f"combo{K.FULL_COMBO}_class"] = scored["fuel"]["predicted_class"].to_numpy()
+        rows[f"combo{K.FULL_COMBO}_confidence"] = (
+            scored["fuel"]["confidence"].to_numpy().round(6))
     return pd.DataFrame(rows).to_dict("records")
 
 
@@ -352,12 +356,12 @@ def export_csv(run_id: str, level: str = "window") -> str:
               "window_false_alarm_rate", "false_alarms_per_hour",
               "event_accuracy", "event_precision", "event_recall", "event_f1",
               "median_detection_s", "p90_detection_s", "events_never_detected",
-              "vs_combo6_event_delta", "vs_combo6_p_value"]
+              "vs_full_event_delta", "vs_full_p_value"]
     writer = csv.DictWriter(buf, fieldnames=fields)
     writer.writeheader()
     for c, r in sorted(result["combos"].items()):
         w, e, lat = r["window"], r["event"], r["latency"]
-        vs = r.get("vs_combo6", {})
+        vs = r.get("vs_full", {})
         writer.writerow({
             "combo": c, "name": r["name"],
             "sensors": int(r["modalities"]["sensors"]),
@@ -377,7 +381,7 @@ def export_csv(run_id: str, level: str = "window") -> str:
             "median_detection_s": lat["median_detection_s"],
             "p90_detection_s": lat["p90_detection_s"],
             "events_never_detected": lat["events_never_detected"],
-            "vs_combo6_event_delta": vs.get("event_delta"),
-            "vs_combo6_p_value": round(vs["p_value"], 6) if vs else None,
+            "vs_full_event_delta": vs.get("event_delta"),
+            "vs_full_p_value": round(vs["p_value"], 6) if vs else None,
         })
     return buf.getvalue()

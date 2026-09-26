@@ -1,5 +1,5 @@
 """
-Scoring the six combinations, at the two levels a reviewer will ask for.
+Scoring the five combinations, at the two levels a reviewer will ask for.
 
 WINDOW LEVEL IS OPERATIONAL, EVENT LEVEL IS THE HEADLINE. "At any given second,
 is the alarm right?" and "did this fire get caught at all?" are different
@@ -17,7 +17,7 @@ which is which.)
 
 RATES GET CONFIDENCE INTERVALS BECAUSE THE SAMPLE IS SMALL. 96 events, 24 of
 them negative, does not support three decimal places. Every rate here carries a
-95% Wilson interval, and every comparison against combination 6 carries an
+95% Wilson interval, and every comparison against the full combination carries an
 exact McNemar test -- because the headline gap between the fusion model and
 sensors alone is ONE event out of 96, and a paper that claims that as a win
 gets rejected while a paper that measures it and says "not significant" gets
@@ -141,7 +141,7 @@ def warmup_profile(scored: dict, truth: pd.DataFrame,
     Worth its own panel because the answer is not flat. The model's longest
     features are a 15-window rolling statistic and a 25-window persistence
     mean, and until those fill it is reading a history that does not exist
-    yet. Measured on the test split, combination 6's false-alarm rate in a
+    yet. Measured on the test split, the full combination's false-alarm rate in a
     quiet room is 0.72 between windows 5 and 30 and then exactly 0.00 after
     window 60 -- so every false alarm it produces is a warm-up artifact, not a
     standing tendency to cry fire. A single averaged rate hides that
@@ -273,7 +273,7 @@ def detection_latency(alarm: pd.Series, truth: pd.DataFrame) -> dict:
     }
 
 
-# ── the fuel-type table (combination 6, and combination 1) ───────────────────
+# ── the fuel-type table (the full combination, and combination 1) ───────────
 
 def fuel_scores(y_true: np.ndarray, y_pred: np.ndarray, classes: list[str],
                 gate_mask: np.ndarray | None = None) -> dict:
@@ -370,18 +370,23 @@ def evaluate(scored: dict, truth: pd.DataFrame, classes: list[str],
     # Paired comparison against the full system. This is the number the paper
     # lives or dies on, so it is reported with the absolute event count beside
     # it, not only as a percentage.
-    if 6 in event_correct:
+    # K.FULL_COMBO, never a literal. This block once hardcoded 6, so renumbering
+    # the arms would have pointed the McNemar test at a column that no longer
+    # meant "the full system" -- silently, because the key was also spelled with
+    # the number in it. The key is now `vs_full` for the same reason.
+    full = K.FULL_COMBO
+    if full in event_correct:
         for c in combos:
-            if c == 6:
+            if c == full:
                 continue
-            test = mcnemar(event_correct[6], event_correct[c])
-            delta = int(event_correct[6].sum() - event_correct[c].sum())
-            per_combo[c]["vs_combo6"] = {
+            test = mcnemar(event_correct[full], event_correct[c])
+            delta = int(event_correct[full].sum() - event_correct[c].sum())
+            per_combo[c]["vs_full"] = {
                 **test,
                 "event_delta": delta,
                 "event_delta_of": int(len(y_event)),
                 "interpretation":
-                    f"combination 6 gets {abs(delta)} "
+                    f"combination {full} gets {abs(delta)} "
                     f"{'more' if delta >= 0 else 'fewer'} of "
                     f"{len(y_event)} events right"
                     + ("" if test["p_value"] < 0.05

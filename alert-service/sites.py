@@ -79,6 +79,12 @@ class Site:
     exits: dict[str, Exit]
     zone_anchors: dict[str, dict]
     ground_truth: dict[str, dict] = field(default_factory=dict)
+    # Fire location combined with one or more blocked exits, which the zone-keyed
+    # ground truth above cannot express because it is keyed by zone alone. This
+    # is where the refusal cases live: a scenario whose every exit is cut is the
+    # only way to test that the router shelters in place instead of routing
+    # someone past the fire (RO2.2, Section 3.4.8).
+    route_scenarios: list[dict] = field(default_factory=list)
 
     def node_px(self, node_id: str) -> tuple[float, float]:
         return self.nodes[node_id].px(self.px_per_m)
@@ -161,9 +167,39 @@ def load(key: str = SITE_KEY) -> Site:
     for zid in anchors:
         if zid not in zone_ids:
             raise SiteError(f"{key}: zoneAnchors has {zid!r}, which is not a zone")
-    for zid in raw.get("groundTruth", {}):
+    for zid, gt in raw.get("groundTruth", {}).items():
         if zid not in zone_ids:
             raise SiteError(f"{key}: groundTruth has {zid!r}, which is not a zone")
+        # A case that expects an exit must also state how long that route is.
+        # Without it the optimality gap in Section 3.4.8 has no denominator and
+        # silently reports nothing, which is how it came to be empty on both
+        # sites while looking as though it were being measured.
+        if not gt.get("refugeExpected") and gt.get("lengthM") is None:
+            raise SiteError(
+                f"{key}: groundTruth[{zid!r}] expects an exit but declares no "
+                f"lengthM, so the optimality gap cannot be computed")
+
+    scenarios = raw.get("routeScenarios", [])
+    seen_ids: set[str] = set()
+    for sc in scenarios:
+        sid = sc.get("id")
+        if not sid or sid in seen_ids:
+            raise SiteError(f"{key}: routeScenarios needs a unique id, got {sid!r}")
+        seen_ids.add(sid)
+        if sc.get("fireZone") not in zone_ids:
+            raise SiteError(f"{key}: scenario {sid!r} names unknown zone "
+                            f"{sc.get('fireZone')!r}")
+        for xid in sc.get("blockedExits", ()):
+            if xid not in exits:
+                raise SiteError(f"{key}: scenario {sid!r} blocks unknown exit {xid!r}")
+        exp = sc.get("expect") or {}
+        if not exp.get("refugeExpected"):
+            if exp.get("exitId") not in exits:
+                raise SiteError(f"{key}: scenario {sid!r} expects unknown exit "
+                                f"{exp.get('exitId')!r}")
+            if exp.get("lengthM") is None:
+                raise SiteError(f"{key}: scenario {sid!r} expects an exit but "
+                                f"declares no lengthM")
 
     frozen_adj = {k: tuple(v) for k, v in adj.items()}
 
@@ -188,10 +224,15 @@ def load(key: str = SITE_KEY) -> Site:
         default_zone_id=raw["defaultZoneId"],
         zones=raw["zones"], nodes=nodes, adj=frozen_adj, exits=exits,
         zone_anchors=anchors, ground_truth=raw.get("groundTruth", {}),
+        route_scenarios=scenarios,
     )
+    refuges = sum(1 for s in scenarios if (s.get("expect") or {}).get("refugeExpected"))
     log.info("Site %r (%s, rev %s): %d zones, %d nodes, %d edges, %d exits, hazard %.1f m",
              site.key, site.name, site.revision, len(site.zones), len(nodes),
              len(raw["edges"]), len(exits), radius)
+    log.info("Site %r route evidence: %d baseline cases, %d blocked-exit scenarios "
+             "(%d expecting refuge)", site.key, len(site.ground_truth),
+             len(scenarios), refuges)
     return site
 
 

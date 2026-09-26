@@ -1,5 +1,5 @@
 """
-The six sensing combinations, each as a pure function over a feature frame.
+The five sensing combinations, each as a pure function over a feature frame.
 
 EVERY COMBINATION RETURNS THE SAME SHAPE: a per-window boolean alarm and a
 per-window scalar score. The scalar is what makes the comparison honest --
@@ -191,16 +191,23 @@ def combo2_yolo(features: pd.DataFrame, manifest: dict) -> tuple[pd.Series, pd.S
     return raw, _smooth(evidence, groups, window)
 
 
-def combo3_vlm(features: pd.DataFrame, manifest: dict) -> tuple[pd.Series, pd.Series]:
-    """VLM only — the held verdict, with a "could not see" floor."""
-    score = features[["vlm_flame_conf", "vlm_smoke_conf"]].max(axis=1)
-    raw = (score > K.VLM_CONFIRM_THRESHOLD) & (
-        features["vlm_visual_conf"] >= K.VLM_VIEW_FLOOR
-    )
-    return raw, score
+def _vlm_score(features: pd.DataFrame) -> pd.Series:
+    """The held VLM confidence for a window.
+
+    THIS IS A FEATURE, NOT AN ARM. It used to be half of a "VLM only"
+    combination, which was removed: the VLM is a cascade confirmer that the
+    generator only ever invokes when YOLO fires, so an arm claiming to run
+    without a detector had no data behind it. See the header of constants.py.
+
+    The quantity itself is still needed, because the YOLO + VLM arm scores
+    against it. Keeping it as a plain function makes the distinction explicit --
+    an observation the study uses, rather than a configuration it claims to have
+    measured.
+    """
+    return features[["vlm_flame_conf", "vlm_smoke_conf"]].max(axis=1)
 
 
-def combo4_sensors_yolo(
+def combo3_sensors_yolo(
     features: pd.DataFrame, manifest: dict,
     raw1: pd.Series, score1: pd.Series, raw2: pd.Series, score2: pd.Series,
 ) -> tuple[pd.Series, pd.Series]:
@@ -214,23 +221,23 @@ def combo4_sensors_yolo(
     return raw2 & agreed, pd.concat([score2, recent1], axis=1).min(axis=1)
 
 
-def combo5_vlm_yolo(
+def combo4_vlm_yolo(
     features: pd.DataFrame, manifest: dict,
-    raw2: pd.Series, score2: pd.Series, score3: pd.Series,
+    raw2: pd.Series, score2: pd.Series, vlm_score: pd.Series,
 ) -> tuple[pd.Series, pd.Series]:
-    """VLM + YOLO — verbatim the rule the dashboard deploys today."""
+    """YOLO + VLM — verbatim the rule the dashboard deploys today."""
     confirmed = features["vlm_confirmed"] > 0.5
-    return raw2 & confirmed, pd.concat([score2, score3], axis=1).min(axis=1)
+    return raw2 & confirmed, pd.concat([score2, vlm_score], axis=1).min(axis=1)
 
 
-def combo6_fusion(
+def combo5_fusion(
     features: pd.DataFrame, manifest: dict, classes: list[str],
     fusion_proba: np.ndarray,
 ) -> tuple[pd.Series, pd.Series, pd.DataFrame]:
     """All three — the trained fusion model, plus its 4-class fuel verdict."""
     groups = features[GROUP].to_numpy()
     # The manifest's causal smoothing over the whole vector, renormalised --
-    # the same operation the model's own predict() performs, so combination 6
+    # the same operation the model's own predict() performs, so the full arm
     # is scored exactly as trained_model_v3/metrics.csv scored it.
     proba = smooth_proba(fusion_proba, groups, manifest["config"]["smooth_window"])
 
@@ -259,7 +266,7 @@ def score_all(
     "sensor": ...}, one row each, already aligned with `features`.
 
     Returns per-window raw rules, debounced alarms and scores, keyed by combo
-    number, plus combination 6's fuel-class frame.
+    number, plus the full combination's fuel-class frame.
     """
     wanted = set(combos or K.COMBOS)
     groups = features[GROUP]
@@ -267,20 +274,21 @@ def score_all(
     score: dict[int, pd.Series] = {}
     fuel = None
 
-    # 1 and 2 first: 4 and 5 are built from them, so they are computed once.
+    # 1 and 2 first: 3 and 4 are built from them, so they are computed once.
     raw[1], score[1] = combo1_sensors(features, manifest, classes, proba["sensor"])
     raw[2], score[2] = combo2_yolo(features, manifest)
-    raw[3], score[3] = combo3_vlm(features, manifest)
-    raw[4], score[4] = combo4_sensors_yolo(
+    raw[3], score[3] = combo3_sensors_yolo(
         features, manifest, raw[1], score[1], raw[2], score[2])
-    raw[5], score[5] = combo5_vlm_yolo(features, manifest, raw[2], score[2], score[3])
-    raw[6], score[6], fuel = combo6_fusion(features, manifest, classes, proba["fusion"])
+    # The VLM confidence is a feature, not an arm of its own -- see _vlm_score.
+    raw[4], score[4] = combo4_vlm_yolo(
+        features, manifest, raw[2], score[2], _vlm_score(features))
+    raw[5], score[5], fuel = combo5_fusion(features, manifest, classes, proba["fusion"])
 
     return {
         "raw": {c: raw[c] for c in wanted},
         "alarm": {c: _debounce(raw[c], groups) for c in wanted},
         "score": {c: score[c].astype(float) for c in wanted},
-        "fuel": fuel if 6 in wanted else None,
+        "fuel": fuel if K.FULL_COMBO in wanted else None,
     }
 
 

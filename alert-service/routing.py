@@ -98,6 +98,13 @@ class RouteResult:
         """Everything, for the stored record and the analysis endpoint."""
         d = self.to_wire()
         d.update({
+            # TWO DECIMALS HERE, ONE ON THE WIRE. The phone shows a distance to
+            # walk, where a centimetre is noise. The optimality gap divides this
+            # by the hand-derived length, so the same rounding that is right for
+            # a screen shows up as a gap of up to half a percent against a route
+            # that is in fact optimal -- a measurement artefact reported as a
+            # finding. The ground truth in the site files is rounded the same way.
+            "lengthM": round(self.length_m, 2),
             "originNode": self.origin_node,
             "pathNodes": list(self.path_nodes),
             "blockedEdges": [list(e) for e in self.blocked_edges],

@@ -1,12 +1,17 @@
 """
 FireWatch AI – ablation service
 
-Scores one observation stream through six sensing combinations at once, so a
+Scores one observation stream through five sensing combinations at once, so a
 research paper can say what each modality actually contributes:
 
-    1 sensors only        4 sensors + YOLO
-    2 YOLO only           5 VLM + YOLO   (the rule the dashboard deploys today)
-    3 VLM only            6 sensors + YOLO + VLM  (the trained fusion model)
+    1 sensors only        4 YOLO + VLM   (the rule the dashboard deploys today)
+    2 YOLO only           5 sensors + YOLO + VLM  (the trained fusion model)
+    3 sensors + YOLO
+
+Five, not the eight the three components could make. The empty set never alarms,
+and the two subsets that hold the VLM without YOLO cannot run at all: Algorithm 3
+invokes the VLM only on a YOLO box. constants.py explains which arm was removed
+and why.
 
 THE MODEL IS NOT A FRAME CLASSIFIER. 72 of the fusion model's 96 features are
 rolling statistics, running maxima and a 25-window persistence mean. Its own
@@ -166,12 +171,13 @@ LIMITATIONS = [
                "AUROC 0.486 — chance. Do not read a high confidence as "
                "'this is a familiar situation'. The out-of-distribution split "
                "on this page shows what that costs."},
-    {"id": "combo6_contains_combo1", "severity": "medium",
-     "title": "Combination 6 contains combination 1",
-     "detail": "Four of the fusion model's 96 features are sensor_model's class "
-               "probabilities, so 'fusion beats sensors' is partly "
-               "tautological. The informative comparisons are 6 against 4, and "
-               "6 against 2."},
+    {"id": "full_contains_sensors", "severity": "medium",
+     "title": f"Combination {K.FULL_COMBO} contains combination 1",
+     "detail": f"Four of the fusion model's 96 features are sensor_model's class "
+               f"probabilities, so 'fusion beats sensors' is partly "
+               f"tautological. The informative comparisons are "
+               f"{K.FULL_COMBO} against {K.NO_VLM_COMBO}, and "
+               f"{K.FULL_COMBO} against 2."},
 ]
 
 
