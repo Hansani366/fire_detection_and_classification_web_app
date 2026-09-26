@@ -470,8 +470,9 @@ Give the report stage and the detailed stage a short table each, on the model of
 **Built this session, and it has methodological consequences that need stating before any
 trial is run.**
 
-The dashboard has a visible switch with two settings, and the mobile app has its own,
-independent switch for the escape-route layout. Neither reads the other.
+The dashboard has a visible switch with two settings. The mobile app used to have its own,
+independent switch for the escape-route layout; that switch and the industrial drawing behind
+it have since been removed (§17), so only the dashboard setting remains.
 
 | Setting | What alarms |
 |---|---|
@@ -522,6 +523,68 @@ ablation arms read `DETAILED_PROMPT`, which has none. So "combination 6" in the 
 not the deployed full system, and adding the setting made them diverge further. Whichever
 path H1 is measured through determines which artefact the result describes. This needs a
 sentence in Chapter 4 either way.
+
+## 17. The mobile app draws one facility, and the alert is now Android's own
+
+**Changed in the app after the chapters were written.** Four decisions there touch what the
+thesis can say.
+
+**One layout, not two.** The app carried a drawing of the industrial hall and a switch to
+choose between it and the home, and both are gone. No trial could run in those premises —
+§5 of the README records that they were never accessible — so the second drawing was artwork
+for a building nothing could be measured in. The consequence to state: running the backend
+with `SITE_KEY=industrial` now makes the phone refuse to draw the route and say why, so
+**every route demonstration and every evacuation run uses the home site**. The refusal itself
+is unchanged and still tested; it is now driven by the route's own site key rather than by a
+phone setting.
+
+**The fire alert is a real Android notification, presented by Android.** The app also held a
+simulated lock screen — a drawn clock and a drawn notification card — reachable from a button
+on the dashboard. It has been deleted, and a confirmed fire now carries a full-screen intent
+so a locked handset shows the alarm itself. This matters for **RO3.4**: Presentation B must be
+the notification the system actually delivers, and a participant shown a mock-up of a
+notification would have been rating a picture of the system.
+
+> Add to §3.3.8, in the description of what participants are shown: the fire alert is
+> delivered to the handset by Firebase Cloud Messaging and presented by Android on the fire
+> channel, full screen on a locked device. No part of the alert presentation is simulated by
+> the application.
+
+**One limit worth stating with it.** When the app is backgrounded or terminated, Android draws
+the alert from the message's own notification block, which has no field for a full-screen
+intent; the takeover therefore applies while the app is running, and a background alert
+arrives as a heads-up on the lock screen. The alternative — sending fire pushes as data only
+so the app always builds the notification — would put the alarm behind the app's own code
+starting first, and was rejected for that reason. §3.4.6's delivery measurement is unaffected:
+all three acknowledgement paths are unchanged.
+
+**The backend address is fixed at build time.** The in-app server override behind a long-press
+on the dashboard title is gone, because a value typed in earlier outranked the compiled one
+and nothing on screen said so. Per §3.3.9's naming convention, the address an APK was built
+with is now a property of that artefact and should be recorded with the trial log.
+
+---
+
+## 18. The ablation study has one flicker implementation
+
+**Small, and it removes a risk rather than adding one.** `flame_flicker_hz` was measured twice:
+in Python from recorded frames, and in the browser at 16 Hz for the ablation page's live
+comparison tab. That tab has been removed — nothing on a live feed carries a ground-truth
+label, so it could never produce a number for Chapter 5 — and the browser implementation went
+with it.
+
+Nothing in the chapters needs changing: flicker appears only in the literature review
+(§2), never as a claim about the built system. Worth knowing when Chapter 4 describes the
+channel, though, because the risk it removes is real — two implementations with different
+windows or a different peak test would have made the ablation compare the measurement rather
+than the system.
+
+One thing to note while writing §3.2.5: the **live dashboard never measured flicker at all**.
+`escalation.js` posts no `flicker_hz` to the classifier, so the live fuel verdict uses the
+quiet default for that channel while the ablation arms measure it from frames. State this
+where the fuel classifier's inputs are listed.
+
+---
 
 ## Outstanding, and not an edit to anything
 
