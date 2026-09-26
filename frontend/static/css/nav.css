@@ -62,3 +62,51 @@
   .page-nav { order: 3; width: 100%; margin-top: 4px; }
   .page-nav a { flex: 1; justify-content: center; }
 }
+
+/* ── Facility badge ──────────────────────────────────────────────────────
+   Which building the backend is routing for, top right of every page. It is
+   the most colour-saturated thing in the bar on purpose: a safety officer must
+   be able to tell at a glance that the routes on screen describe this building
+   and not the other one. See js/site-badge.js for why it is a readout rather
+   than a control, and why it is drawn differently from the detection setting
+   dropdown that also says "home".                                          */
+.site-badge {
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 12px 6px 10px;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
+  font-family: var(--display);
+  line-height: 1.15;
+  white-space: nowrap;
+}
+.site-badge svg { width: 19px; height: 19px; flex: none; fill: currentColor; }
+.site-badge-text { display: flex; flex-direction: column; }
+.site-badge-label {
+  font-size: 9px; font-weight: 800; letter-spacing: 1.1px;
+  opacity: .75; text-transform: uppercase;
+}
+.site-badge-name { font-size: 0.82rem; font-weight: 800; letter-spacing: .2px; }
+
+/* Two sites, two unmistakably different colours. Deliberately not the brand
+   orange, which already means "fire" everywhere else on these pages. */
+.site-badge.site-industrial {
+  background: #E8EEFB; border-color: #B9CBF2; color: #24417F;
+}
+.site-badge.site-home {
+  background: #E4F4EC; border-color: #A9DCC2; color: #1C6340;
+}
+.site-badge.site-unknown {
+  background: var(--neutral-bg); border-color: var(--line); color: var(--ink3);
+}
+
+/* The detection setting and the routing graph disagree. Not an error -- the two
+   are independent choices -- but the operator should know the camera is being
+   judged by one building's rules while the routes describe another. */
+.site-badge.site-badge-mismatch {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, .18);
+}
+
+@media (max-width: 720px) {
+  .site-badge-label { display: none; }
+}
