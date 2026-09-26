@@ -314,8 +314,18 @@ def export_json(run_id: str, health: dict, config: dict) -> dict:
             "model_checksums": health["checksums"],
             "library_versions": health["lib_versions"],
             "library_versions_ok": health["lib_versions_ok"],
-            "data_source": health["data_source"],
-            "synthetic_warning": health["synthetic_warning"],
+            # READ trainedOn, NOT data_source. _health_payload has only ever
+            # built "trainedOn" (mirroring fire-classification-service, which
+            # also names it that), so this line raised KeyError and the whole
+            # export returned 500 -- taking out the one button that produces the
+            # citable provenance file. The output key stays "data_source"
+            # because that is what the exported document calls it; only the
+            # lookup was wrong. Read defensively so a rename upstream degrades
+            # to "unknown" instead of breaking the export again.
+            "data_source": health.get("data_source")
+                           or health.get("trainedOn")
+                           or "unknown",
+            "synthetic_warning": health.get("synthetic_warning"),
         },
         "config": config,
         "results": results(run_id),

@@ -39,6 +39,20 @@
   // just over the threshold would send a notification every poll.
   var WARNING_COOLDOWN_MS = 120000;
 
+  /* KEEP-ALIVE FOR A FIRE THAT IS STILL BURNING.
+
+     alert-service resolves any active incident that has had no fire event for
+     CLEAR_AFTER_SECONDS (30 s). That rule is right, but it assumes something
+     keeps saying "still burning". The alarm used to be posted once, on the
+     rising edge, and never again -- so a fire that went on burning was
+     auto-resolved half a minute in and every phone was told it was over.
+
+     Ten seconds gives three chances to land inside the server's window, so one
+     dropped request cannot resolve a live incident. The refresh carries no
+     scene: the server treats a repeat event as a quiet touch, and the situation
+     report is written once (see sendFire). */
+  var FIRE_REFRESH_MS = 10000;
+
   // The classifier needs a clean-air baseline and then time for its rolling
   // features to fill. Asking before that yields confident nonsense.
   var CLASSIFY_INTERVAL_MS = 1000;
@@ -54,7 +68,7 @@
     yoloHit: false, vlmConfirmed: false, vlmAvailable: true, vlm: null, occupancy: null,
     // outputs
     tier: 'clear', alarm: false, reported: false, evidence: null,
-    warningSentAt: 0, warningText: '',
+    warningSentAt: 0, warningText: '', fireSentAt: 0,
     classification: null, classifySentFor: null,
     session: null, classifyTimer: null, classifyBusy: false,
     captureFrame: null, onChange: null,
@@ -139,6 +153,9 @@
 
   /* ── the ladder ───────────────────────────────────────── */
 
+  // Alarm tiers ranked, so the latch below can take "the higher of" two states.
+  var TIER_RANK = { clear: 0, warning: 1, danger: 2, fire: 3 };
+
   function decide() {
     var gassy = S.level === 'warn' || S.level === 'danger';
 
@@ -156,15 +173,42 @@
     return 'clear';
   }
 
+  /* ALGORITHM 2'S SAFETY LATCH.
+
+     "if S is FIRE CONFIRMED or GAS DANGER and V = unavailable:
+          S' <- the higher of S and S'"
+
+     decide() is memoryless: it reads only the current evidence. That is right
+     for every case except one — an alarm already standing while verification is
+     unreachable. Without this, a single VLM timeout with the gas reading normal
+     drops 'fire' straight to 'clear' and resolves a live incident, which is the
+     exact failure the thesis rule exists to prevent. A failed check is missing
+     evidence, not evidence of absence, so it may never be the thing that stands
+     an alarm down. Only an answer we actually received can do that. */
+  function latch(next, previous) {
+    if (S.vlmAvailable) return next;
+    if (previous !== 'fire' && previous !== 'danger') return next;
+    return TIER_RANK[next] >= TIER_RANK[previous] ? next : previous;
+  }
+
   function evaluate() {
     if (!S.running) return;
-    var next = decide();
     var was = S.tier;
+    var next = latch(decide(), was);
     S.tier = next;
     S.alarm = next === 'fire' || next === 'danger';
 
     if (next === 'warning') sendWarning();
-    if (S.alarm && !S.reported) { S.reported = true; sendFire(next); }
+    if (S.alarm && !S.reported) {
+      S.reported = true;
+      S.fireSentAt = Date.now();
+      sendFire(next);
+    } else if (S.alarm && Date.now() - S.fireSentAt >= FIRE_REFRESH_MS) {
+      // Still burning. Tell the server so, or its watchdog will close the
+      // incident underneath us -- see FIRE_REFRESH_MS.
+      S.fireSentAt = Date.now();
+      sendFire(next, true);
+    }
     if (!S.alarm && S.reported) { S.reported = false; sendClear(); }
 
     if (next !== was && S.onChange) S.onChange(state());
@@ -203,7 +247,7 @@
 
   /* ── tier 2 / 1b: the alarm ───────────────────────────── */
 
-  function sendFire(tier) {
+  function sendFire(tier, isRefresh) {
     var vlm = S.vlm || {};
     var description = tier === 'danger'
       // Tier 1b has no picture to describe, so the readings ARE the report.
@@ -219,9 +263,15 @@
 
        It is also deliberately NOT awaited before the event is posted. The alarm
        must not wait on a description of itself; the report follows in a second
-       post and attaches to the incident that is already open. */
+       post and attaches to the incident that is already open. alert-service
+       accepts that later post and fills in the report it is still missing, so
+       the two posts no longer race for the same incident.
+
+       A keep-alive refresh skips all of this. It exists only to reset the
+       server's idle timer, and paying for a fresh description every ten seconds
+       would buy the same paragraph over and over. */
     var evidence = S.evidence || {};
-    if (tier !== 'danger' && S.captureFrame) {
+    if (!isRefresh && tier !== 'danger' && S.captureFrame) {
       describeScene(function (scene) {
         post('/api/events/fire', {
           zoneId: S.zoneId, type: vlm.type || 'fire',

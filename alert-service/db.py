@@ -19,9 +19,15 @@ log = logging.getLogger("alert.db")
 
 DB_PATH = os.getenv("DB_PATH", "alert.db")
 
-# Muster head-count is not tracked by the vision backend — we synthesize it.
-DEFAULT_MUSTER_PRESENT = 42
-DEFAULT_MUSTER_TOTAL = 45
+# NO SYNTHETIC MUSTER. These columns used to be seeded with 42 present of 45,
+# which the officer's report then printed as though someone had counted. Invented
+# occupancy on a safety report is worse than an empty field: a responder cannot
+# tell it from a measurement, and three people unaccounted for is exactly the
+# number that decides whether anyone goes back inside.
+#
+# They are left NULL now. muster_json reports "unknown" until the human detector
+# supplies a real head-count, and /api/incidents/{id}/ack still increments them
+# for the token-less check-in path, which starts from nothing rather than from 42.
 
 
 def _utcnow_ms() -> str:
@@ -346,9 +352,9 @@ async def create_incident(db, incident_id, zone_id, det_type, confidence, descri
              (id, zone_id, type, confidence, description, detected_at, status,
               created_at, resolved_at, resolution, last_event_at, muster_present, muster_total,
               occupancy_current, occupancy_peak, severity, verification, sensor_summary)
-           VALUES (?, ?, ?, ?, ?, ?, 'active', ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, 'active', ?, NULL, NULL, ?, NULL, NULL, ?, ?, ?, ?, ?)""",
         (incident_id, zone_id, det_type, confidence, description, detected_at,
-         now, now, DEFAULT_MUSTER_PRESENT, DEFAULT_MUSTER_TOTAL, occupancy, occupancy,
+         now, now, occupancy, occupancy,
          severity, verification, sensor_summary),
     )
     await db.commit()
@@ -652,8 +658,21 @@ async def get_all_deliveries(db, limit: int = 500) -> list[dict]:
 
 
 async def bump_muster(db, incident_id: str) -> None:
+    """Count one token-less check-in.
+
+    Both columns start NULL now that nothing is synthesized, and NULL + 1 is NULL
+    in SQL -- which would have made every check-in on this path vanish. So the
+    count starts from zero, and the cap is applied only when a real total is
+    known: MIN against a NULL total would throw the increment away again.
+    """
     await db.execute(
-        "UPDATE incidents SET muster_present = MIN(muster_present + 1, muster_total) WHERE id = ?",
+        """UPDATE incidents
+              SET muster_present = CASE
+                    WHEN muster_total IS NULL
+                      THEN COALESCE(muster_present, 0) + 1
+                    ELSE MIN(COALESCE(muster_present, 0) + 1, muster_total)
+                  END
+            WHERE id = ?""",
         (incident_id,),
     )
     await db.commit()

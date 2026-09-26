@@ -92,17 +92,24 @@ def muster_json(inc: dict) -> dict:
     counts as evacuated. It is a far better number than the synthetic constant
     it replaces, but it is an estimate and the app should treat it as one.
 
-    Falls back to the stored (synthetic) figures when no occupancy was ever
-    recorded — an incident from before this existed, or one raised while the
-    human detector was down.
+    WHEN NOTHING WAS EVER COUNTED, SAY SO. This used to fall back to the stored
+    figures, which create_incident seeded with 42 present of 45 — so an incident
+    the human detector never saw printed invented numbers on the officer's report
+    with no way to tell them from a measurement. Now `source` is "unknown" and
+    both figures are null, and the caller is expected to render that as "not
+    recorded" rather than as a count. An honest blank is worth more to a
+    responder than a plausible number nobody measured.
+
+    `muster_present` may still be a real count on the token-less check-in path,
+    where occupants press "I am out" without a registered device. That is a
+    measurement, so it is reported, with no total to compare it against.
     """
     peak = inc.get("occupancy_peak")
     if peak is None:
-        return {
-            "present": inc.get("muster_present", 42),
-            "total": inc.get("muster_total", 45),
-            "source": "estimated",
-        }
+        checked_in = inc.get("muster_present")
+        if checked_in:
+            return {"present": checked_in, "total": None, "source": "check-in"}
+        return {"present": None, "total": None, "source": "unknown"}
     # An unknown current count must NOT read as an empty room: "we lost the
     # camera" would otherwise render as "everyone is out", which is the one
     # error this number must never make. Assume nobody has left instead.

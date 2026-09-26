@@ -186,6 +186,17 @@ async def handle_confirmed_fire(db, zone_id, det_type, confidence, description, 
             await store.touch_incident(db, active["id"], confidence, description,
                                        _utcnow().isoformat(timespec="seconds").replace("+00:00", "Z"),
                                        occupancy)
+            # THE LATE SCENE STILL COUNTS. The dashboard posts a fire twice: once
+            # immediately, and once when the vision-language description comes
+            # back. The immediate post opens the incident, so the one carrying
+            # the description always arrives second and used to be thrown away
+            # here -- which left every live incident with no situation report,
+            # the one thing RO3.1 exists to produce. Accepting it on the refresh
+            # path makes the order irrelevant: whichever post carries a scene
+            # fills the report in, and once filled it is not rewritten, so the
+            # ten-second keep-alives cannot overwrite it.
+            if scene and not active.get("situation_report"):
+                await _attach_report(db, active["id"], zone_id, scene, evidence)
             return {"incidentId": active["id"], "created": False, "reason": "already_active"}
 
     if escalated is not None:

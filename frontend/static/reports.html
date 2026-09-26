@@ -203,6 +203,22 @@ button.ghost:hover { background: var(--neutral-bg); }
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+  /* THE MUSTER LINE MUST NEVER INVENT A NUMBER. alert-service now returns
+     present and total as null with source "unknown" when the human detector
+     never supplied a head-count, in place of the synthetic "42 of 45" this line
+     used to print. A responder reads this to decide whether anyone is still
+     inside, so a blank that admits it is blank is worth more than a plausible
+     count nobody measured. */
+  const musterLine = (m) => {
+    if (!m || m.source === 'unknown' || m.present === null || m.present === undefined) {
+      return 'No head-count recorded';
+    }
+    if (m.total === null || m.total === undefined) {
+      return `${m.present} accounted for, total unknown (${esc(m.source)})`;
+    }
+    return `${m.present} of ${m.total} accounted for (${esc(m.source)})`;
+  };
+
   const time = (iso) => {
     if (!iso) return '—';
     const d = new Date(iso);
@@ -329,7 +345,7 @@ button.ghost:hover { background: var(--neutral-bg); }
         <div class="tl-detail">${esc(r.detection.description) || 'No description recorded.'}</div>
         <div class="tl-at" style="margin-top:6px">
           Peak confidence ${((r.detection.peakConfidence || 0) * 100).toFixed(0)}% ·
-          ${r.muster.present} of ${r.muster.total} accounted for (${esc(r.muster.source)})
+          ${musterLine(r.muster)}
         </div>
       </div>
 

@@ -534,6 +534,8 @@ async def test_alert(body: TestAlertIn | None = None):
 
     if severity == "gas_danger":
         # Tier 1b: alarms, but nothing is visible, so confidence is genuinely 0.
+        # No camera claim either, so there is no scene -- the readings are the
+        # report, exactly as Table 3.6 says for this state.
         return await intake.handle_confirmed_fire(
             _db(), zone_id, "smoke", 0.0,
             "Dangerous gas levels with nothing visible on camera. "
@@ -542,8 +544,44 @@ async def test_alert(body: TestAlertIn | None = None):
             severity="gas_danger", verification="not_applicable",
         )
 
+    # A DEMO ALERT MUST CARRY A SITUATION REPORT.
+    #
+    # This endpoint used to pass no scene, and _attach_report returns early
+    # without one -- so every demo alert opened an incident with the report
+    # NULL. That is the path most likely to be used in a demonstration, and it
+    # was the one path that showed nothing of RO3.1.
+    #
+    # The scene below is the fixed description a vision-language model would
+    # return for this frame, and the evidence is what the detectors would have
+    # logged alongside it. They are deliberately consistent with each other, so
+    # the grounding check has something real to agree with: 0.08 of the frame
+    # sits inside the "moderate" band, two smoke boxes support the smoke claim,
+    # and the head-count matches the occupancy the incident is opened with. The
+    # claims are graded by the same code as a live report -- nothing here is
+    # pre-approved.
+    scene = {
+        "description": "Open flames are visible among the fabric rolls with "
+                       "smoke rising toward the ceiling.",
+        "material": "fabric rolls and cardboard packaging",
+        "materialFamily": "solid",
+        "sizeBand": "moderate",
+        "sizeNote": "roughly one pallet width",
+        "smokePresent": True,
+        "smokeColour": "grey",
+        "smokeDensity": "thickening",
+        "peopleVisible": occupancy > 0,
+        "peopleCount": occupancy,
+    }
+    evidence = {
+        "fireAreaRatio": 0.08,
+        "smokeBoxes": 2,
+        "fireBoxes": 1,
+        "gasLevel": "warn",
+        "occupancy": occupancy,
+    }
     return await intake.handle_confirmed_fire(
         _db(), zone_id, "fire", 0.92,
         "Open flames are visible among the fabric rolls with smoke rising toward the ceiling.",
         None, force=True, occupancy=occupancy,
+        scene=scene, evidence=evidence,
     )

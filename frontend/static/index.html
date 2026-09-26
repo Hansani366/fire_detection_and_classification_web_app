@@ -1536,6 +1536,42 @@ function stopHealthPoll() {
   S.healthTimerId = null;
 }
 
+/* Evidence for the situation report's grounding check (RO3.1).
+
+   These are the LOGGED OBSERVATIONS a generated claim gets checked against, so
+   they are measured off the same frame the description is written from. Box
+   coordinates are native-frame pixels, which is why the area ratio divides by
+   the offscreen canvas and not the display canvas -- the display is letterboxed
+   and would inflate the ratio on any non-matching aspect.
+
+   TOP LEVEL ON PURPOSE. This was once nested inside reportFire, which put it out
+   of reach of the three Escalation.onVision calls in detectOnce. Each of those
+   threw before the alarm could be raised, so the camera could never open an
+   incident and no evidence ever reached the grounding check. It belongs beside
+   captureBlob because it describes the same frame. */
+function sceneEvidence() {
+  const dets = S.lastDetections || [];
+  const area = offscreen.width * offscreen.height;
+  let biggest = 0, smokeBoxes = 0;
+  dets.forEach(d => {
+    const [x1, y1, x2, y2] = d.box;
+    const a = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+    const label = (d.label || '').toLowerCase();
+    if (label.includes('smoke')) smokeBoxes++;
+    if (label.includes('fire') || label.includes('flame')) {
+      biggest = Math.max(biggest, a);
+    }
+  });
+  const sensors = Escalation.state ? Escalation.state() : {};
+  return {
+    fireAreaRatio: area > 0 ? +(biggest / area).toFixed(4) : null,
+    smokeBoxes: smokeBoxes,
+    fireBoxes: dets.filter(d => !(d.label || '').toLowerCase().includes('smoke')).length,
+    gasLevel: sensors.sensorLevel || null,
+    occupancy: S.occNow,
+  };
+}
+
 /* ═══════════════════════════════════════════════════════════
    CAPTURE
 ═══════════════════════════════════════════════════════════ */
@@ -1610,36 +1646,6 @@ async function callVlm(blob) {
 /* Report a confirmed fire to alert-service (which pushes the mobile app).
    Fired once on the rising edge of the alarm; reset when the hold expires. */
 async function reportFire(vlm) {
-  /* Evidence for the situation report's grounding check (RO3.1).
-
-     These are the LOGGED OBSERVATIONS a generated claim gets checked against, so
-     they are measured off the same frame the description is written from. Box
-     coordinates are native-frame pixels, which is why the area ratio divides by
-     the offscreen canvas and not the display canvas -- the display is letterboxed
-     and would inflate the ratio on any non-matching aspect. */
-  function sceneEvidence() {
-    const dets = S.lastDetections || [];
-    const area = offscreen.width * offscreen.height;
-    let biggest = 0, smokeBoxes = 0;
-    dets.forEach(d => {
-      const [x1, y1, x2, y2] = d.box;
-      const a = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-      const label = (d.label || '').toLowerCase();
-      if (label.includes('smoke')) smokeBoxes++;
-      if (label.includes('fire') || label.includes('flame')) {
-        biggest = Math.max(biggest, a);
-      }
-    });
-    const sensors = Escalation.state ? Escalation.state() : {};
-    return {
-      fireAreaRatio: area > 0 ? +(biggest / area).toFixed(4) : null,
-      smokeBoxes: smokeBoxes,
-      fireBoxes: dets.filter(d => !(d.label || '').toLowerCase().includes('smoke')).length,
-      gasLevel: sensors.sensorLevel || null,
-      occupancy: S.occNow,
-    };
-  }
-
   const conf = S.lastDetections.length
     ? Math.max(...S.lastDetections.map(d => d.confidence))
     : MIN_CONF;
