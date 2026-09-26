@@ -2,8 +2,8 @@
    RESET & TOKENS
 
    Moved verbatim out of index.html so the ablation page can share one
-   palette. ONLY the reset, the tokens, the page background and the page
-   frame live here — every dashboard component (.kpi, .hero-*, the camera
+   palette. ONLY the two @font-face rules, the reset, the tokens, the page
+   background and the page frame live here — every dashboard component (.kpi, .hero-*, the camera
    panes, the sensor tiles) stayed inline, because the ablation page uses
    none of them and moving 800 lines of CSS out of a 2,000-line file with
    no linter and no test suite buys nothing.
@@ -11,6 +11,37 @@
    Linked BEFORE each page's own <style> block, so an inline rule still
    wins a specificity tie exactly as it did when all of this was inline.
 ═══════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════
+   FONTS
+
+   SELF-HOSTED, NOT FETCHED FROM A CDN. The pages used to load these two
+   families from fonts.googleapis.com, which made the dashboard render
+   differently on a machine with no internet -- and the trials run on a
+   laptop that may have none. A thesis artefact has to look the same on
+   any machine that clones it, so the files are served from this repo.
+
+   Both are variable fonts, so one file covers every weight the pages
+   ask for: Inter 400-700 for body copy, Plus Jakarta Sans 600-800 for
+   headings, labels and numerals. Declaring the full axis range in
+   font-weight is what lets the browser interpolate instead of faking a
+   bold. The same two files are bundled by the mobile app, so the phone
+   and the dashboard cannot drift apart typographically.
+═══════════════════════════════════════════════════════════ */
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  src: url('/fonts/PlusJakartaSans.ttf') format('truetype');
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
