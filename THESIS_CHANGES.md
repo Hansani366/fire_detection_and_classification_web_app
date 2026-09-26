@@ -524,19 +524,32 @@ not the deployed full system, and adding the setting made them diverge further. 
 path H1 is measured through determines which artefact the result describes. This needs a
 sentence in Chapter 4 either way.
 
-## 17. The mobile app draws one facility, and the alert is now Android's own
+## 17. The mobile app picks its floor plan from the data, and the alert is now Android's own
 
 **Changed in the app after the chapters were written.** Four decisions there touch what the
 thesis can say.
 
-**One layout, not two.** The app carried a drawing of the industrial hall and a switch to
-choose between it and the home, and both are gone. No trial could run in those premises —
-§5 of the README records that they were never accessible — so the second drawing was artwork
-for a building nothing could be measured in. The consequence to state: running the backend
-with `SITE_KEY=industrial` now makes the phone refuse to draw the route and say why, so
-**every route demonstration and every evacuation run uses the home site**. The refusal itself
-is unchanged and still tested; it is now driven by the route's own site key rather than by a
-phone setting.
+**The layout switch is gone; the drawing follows the data.** The app had a switch choosing
+between the home and the industrial drawing, set on the phone and read by nothing else. That
+was the defect: `alert-service` stamps every route with the site it was generated for
+(`routing.py`), and nothing reconciled that stamp with what the phone had been set to, so a
+handset could be showing one building while holding a route computed for another. The switch
+has been removed and the plan is now selected from the route's own `siteKey`, with the
+backend's declared site as the fallback.
+
+**Both drawings are kept, so both sites still work.** `SITE_KEY=home` and
+`SITE_KEY=industrial` each run end to end, and nothing has to be changed on the phone to
+follow the backend from one to the other. Nothing in the thesis needs to narrow to a single
+facility, and §4's per-site hazard radius stands as written.
+
+What is worth one sentence in Chapter 4 is the safety rule underneath it: a route is drawn
+only on the plan for its own site, and a site this build has no drawing for makes the route
+unavailable with a line on screen saying why. The two plans are at different scales — 25 px/m
+for the home, 10 px/m for the hall — so the same coordinates land 2.5 times further into one
+building than the other, and a guessed plan would place a confident path through the wrong
+walls rather than merely an inaccurate one. `test/route_test.dart` checks every drawing
+against its site file, so a site added on this side without artwork on the other fails a test
+instead of a trial.
 
 **The fire alert is a real Android notification, presented by Android.** The app also held a
 simulated lock screen — a drawn clock and a drawn notification card — reachable from a button
