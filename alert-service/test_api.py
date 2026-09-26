@@ -13,7 +13,7 @@ really asserting that 30 seconds have passed.
 """
 import os, sys, tempfile, time
 os.environ['DB_PATH'] = os.path.join(tempfile.mkdtemp(), 'alert.db')
-os.environ['SITE_KEY'] = 'unit7'
+os.environ['SITE_KEY'] = 'industrial'
 # The auto-clear watchdog normally waits 30s of quiet before resolving an
 # incident and returning the zone to clear. Shorten it so a test can observe the
 # resolved state instead of asserting against a zone that is still burning.
@@ -37,7 +37,7 @@ def test_api_surface():
   with TestClient(service.app) as c:
       check('health', c.get('/health').json()['status'] == 'ok')
       check('site plan names the active site',
-            c.get('/api/site/plan').json()['siteKey'] == 'unit7')
+            c.get('/api/site/plan').json()['siteKey'] == 'industrial')
 
       c.post('/api/devices', json={'token': 'tok_1', 'label': 'phone'})
       c.post('/api/devices', json={'token': 'tok_2', 'label': 'phone2'})

@@ -15,7 +15,7 @@ import routing
 import sites
 
 HOME = sites.load("home")
-UNIT7 = sites.load("unit7")
+INDUSTRIAL = sites.load("industrial")
 
 
 def _route(site, fire, occupant=None, blocked=()):
@@ -25,7 +25,7 @@ def _route(site, fire, occupant=None, blocked=()):
 
 # ── The invariant that matters more than any single scenario ────────────────
 
-@pytest.mark.parametrize("site", [HOME, UNIT7], ids=["home", "unit7"])
+@pytest.mark.parametrize("site", [HOME, INDUSTRIAL], ids=["home", "industrial"])
 def test_no_route_ever_passes_through_the_hazard(site):
     """Hazard-intersection rate must be zero. Not low -- zero.
 
@@ -39,7 +39,7 @@ def test_no_route_ever_passes_through_the_hazard(site):
                 f"{site.key}: fire in {fire['id']}, occupant in {occupant['id']}")
 
 
-@pytest.mark.parametrize("site", [HOME, UNIT7], ids=["home", "unit7"])
+@pytest.mark.parametrize("site", [HOME, INDUSTRIAL], ids=["home", "industrial"])
 def test_every_route_is_a_real_walk_through_the_graph(site):
     for fire in site.zones:
         r = _route(site, fire["id"])
@@ -47,7 +47,7 @@ def test_every_route_is_a_real_walk_through_the_graph(site):
         assert ok, f"{site.key}/{fire['id']}: {why}"
 
 
-@pytest.mark.parametrize("site", [HOME, UNIT7], ids=["home", "unit7"])
+@pytest.mark.parametrize("site", [HOME, INDUSTRIAL], ids=["home", "industrial"])
 def test_generation_is_far_inside_the_five_second_budget(site):
     """RO2.2 claims a route within 5 s of a confirmed detection."""
     worst = max(_route(site, f["id"], o["id"]).generation_ms
@@ -140,24 +140,24 @@ def test_s6_occupants_in_different_areas_get_different_routes():
     assert ne.exit_id == "exit-north"
 
 
-# ── Unit 7: the demo path ───────────────────────────────────────────────────
+# ── Industrial unit: the demo path ───────────────────────────────────────────────────
 
-def test_unit7_fabric_store_fire_cuts_the_north_door():
+def test_industrial_fabric_store_fire_cuts_the_north_door():
     """The drawn plan labels the north door "by fire". This makes that true."""
-    r = _route(UNIT7, "fabric-store")
+    r = _route(INDUSTRIAL, "fabric-store")
     assert "exit-north" in r.blocked_exit_ids
     assert r.exit_id == "exit-east"
 
 
-def test_unit7_route_changes_with_the_fire():
+def test_industrial_route_changes_with_the_fire():
     """Move the fire, get a different door. The point of the whole exercise."""
-    chosen = {z["id"]: _route(UNIT7, z["id"]).exit_id for z in UNIT7.zones}
+    chosen = {z["id"]: _route(INDUSTRIAL, z["id"]).exit_id for z in INDUSTRIAL.zones}
     assert len(set(chosen.values())) > 1, chosen
 
 
 # ── Guards on the map itself ────────────────────────────────────────────────
 
-@pytest.mark.parametrize("site", [HOME, UNIT7], ids=["home", "unit7"])
+@pytest.mark.parametrize("site", [HOME, INDUSTRIAL], ids=["home", "industrial"])
 def test_declared_ground_truth_matches_what_the_router_does(site):
     for zone_id, gt in site.ground_truth.items():
         r = _route(site, zone_id)

@@ -7,7 +7,7 @@ reason in `docker compose logs alert-service` rather than during a fire.
 
 | Key | What it is | Footprint | Hazard radius |
 |---|---|---|---|
-| `unit7` | The demonstration facility. A fictional garment unit, transcribed from the mobile app's original drawing. | 36.0 × 34.8 m | 6.0 m |
+| `industrial` | The demonstration facility. A fictional garment unit, transcribed from the mobile app's original drawing. | 36.0 × 34.8 m | 6.0 m |
 | `home` | The real trial facility (Section 3.3.7), traced from `home_layout.png`. | 13.28 × 9.68 m | 2.0 m |
 
 ## Coordinates are in metres

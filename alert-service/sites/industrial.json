@@ -1,6 +1,6 @@
 {
-  "key": "unit7",
-  "name": "Unit 7",
+  "key": "industrial",
+  "name": "Industrial Unit",
   "revision": "2026-09-25.1",
   "note": "The demo facility. Coordinates are a transcription of the Flutter painter's constants at 10 px/m, so the drawing and the graph describe the same building. See sites/README.md.",
   "render": {

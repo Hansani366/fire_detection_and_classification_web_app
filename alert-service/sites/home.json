@@ -9,7 +9,7 @@
     "designH": 280
   },
   "hazardRadiusM": 2.0,
-  "hazardRadiusNote": "Much smaller than Unit 7's 6 m, and it has to be. The rooms here are about 3 m across, so a 6 m radius would reach every room from anywhere and every route would collapse to a refuge instruction. At 2.0 m a fire blocks the doorway it is standing in without swallowing the house.",
+  "hazardRadiusNote": "Much smaller than the industrial unit's 6 m, and it has to be. The rooms here are about 3 m across, so a 6 m radius would reach every room from anywhere and every route would collapse to a refuge instruction. At 2.0 m a fire blocks the doorway it is standing in without swallowing the house.",
   "defaultZoneId": "living",
   "zones": [
     {
