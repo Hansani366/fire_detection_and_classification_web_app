@@ -21,6 +21,7 @@ import sites
 import extinguishers as ext
 import fcm
 import intake
+import scenarios
 import serializers as ser
 from zones_seed import DEFAULT_ZONE_ID, ZONES_BY_ID
 
@@ -119,6 +120,26 @@ class TestAlertIn(BaseModel):
     zoneId: str | None = None
     occupancy: int | None = None
     severity: str | None = "fire"   # fire | gas_danger | warning
+
+
+class SimulateIn(BaseModel):
+    """One canned fire from scenarios.py, run end to end.
+
+    `fuel` names the scenario, not the model's class: 'solid', 'gas', 'liquid'.
+    The short name is what a dashboard button carries and what a person types
+    into curl, and it keeps the API readable without committing the caller to
+    the classifier's internal class names.
+    """
+    fuel: str = "solid"
+    zoneId: str | None = None
+    # Defaulted to a non-zero count for the same reason /api/test-alert is: a
+    # simulated fire in an empty room never exercises the muster or the people
+    # claim, which is half of what there is to look at.
+    occupancy: int | None = 7
+    # Close the incident straight away so it appears on /reports without waiting
+    # out CLEAR_AFTER_SECONDS. Off by default, because the live dashboard should
+    # show the alarm standing, exactly as a real fire would leave it.
+    resolve: bool = False
 
 
 # ── Lifespan: open DB, init FCM, run the auto-clear watchdog ──────────────────
@@ -585,3 +606,76 @@ async def test_alert(body: TestAlertIn | None = None):
         None, force=True, occupancy=occupancy,
         scene=scene, evidence=evidence,
     )
+
+
+# ── Simulated fires: the fuel classes that cannot be lit safely ──────────────
+
+@app.get("/api/simulate/scenarios")
+async def list_simulations():
+    """What can be simulated, for a dashboard to build its buttons from.
+
+    Served rather than hard-coded in the page, for the same reason
+    /api/extinguishers is: a fourth scenario should mean editing one file, not
+    two that can then disagree about what the third one was called.
+    """
+    return {"scenarios": scenarios.catalogue()}
+
+
+@app.post("/api/simulate")
+async def simulate(body: SimulateIn | None = None):
+    """Run one canned fire and return the report it produced.
+
+    WHY THE REPORT COMES BACK IN THE RESPONSE. The point of pressing the button
+    is to read what the system would have told a responder, and /api/history
+    lists resolved incidents only -- so without this the caller would have to
+    wait out the auto-clear before seeing anything. The body is the same shape
+    /api/incidents/{id}/report returns, so a page can render it with the code it
+    already has for a real incident.
+
+    The scene inside it has been graded by report.py against the logged evidence
+    exactly as a live one is. Nothing about a simulated fire skips that check.
+    """
+    body = body or SimulateIn()
+    scenario = scenarios.get(body.fuel)
+    if not scenario:
+        raise HTTPException(
+            400, f"fuel must be one of {', '.join(scenarios.NAMES)}")
+
+    # FALL BACK RATHER THAN 404, EXACTLY AS THE LIVE PATH DOES. The dashboard
+    # carries one hard-coded zone id for the camera it represents, and the two
+    # site files name different zones -- 'fabric-store' exists on the industrial
+    # site and not on 'home', which is the default. intake.handle_confirmed_fire
+    # already rewrites an unknown zone to the site's default and logs it, so a
+    # real detection from that dashboard lands in the default zone. A 404 here
+    # would mean the button worked on one site and not the other, which is worse
+    # than a rewrite the response tells you about.
+    requested = body.zoneId or DEFAULT_ZONE_ID
+    zone_id = requested if requested in ZONES_BY_ID else DEFAULT_ZONE_ID
+
+    out = await intake.handle_simulation(
+        _db(), scenario, zone_id,
+        occupancy=body.occupancy, resolve=bool(body.resolve))
+
+    incident_id = out.get("incidentId")
+    if not incident_id:
+        raise HTTPException(409, f"could not open an incident: {out.get('reason')}")
+
+    inc = await store.get_incident(_db(), incident_id)
+    zone = await store.get_zone(_db(), zone_id)
+    return {
+        **out,
+        "scenario": {"name": body.fuel, "label": scenario["label"],
+                     "sensorSummary": scenario["sensorSummary"]},
+        "zoneId": zone_id,
+        # Named only when it differs, so a caller can see the rewrite happened
+        # instead of wondering why the report says a room they did not ask for.
+        "requestedZoneId": requested if requested != zone_id else None,
+        # SAY IT IN THE PAYLOAD, NOT JUST ON THE BUTTON. Anything reading this
+        # record later -- a screenshot in a write-up, a log, the phone -- has to
+        # be able to tell a demonstration from a fire that happened.
+        "simulated": True,
+        "report": ser.report_json(
+            inc, _zone_or_stub(zone, zone_id),
+            await store.count_checkouts(_db(), incident_id),
+            await store.get_deliveries(_db(), incident_id)),
+    }

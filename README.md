@@ -114,6 +114,23 @@ the mobile application must reach it on the local network.
 The dashboard serves three pages: live monitoring at `/`, ablation results at
 `/ablation`, and incident reports at `/reports`.
 
+**Simulated fires.** The live page also carries two buttons, **Simulate solid
+combustible fire** and **Simulate gas fire**, under the camera controls. They
+exist because of the constraint Section 5 records: a gas fire and a liquid fuel
+fire cannot be produced safely indoors, so the only fuel class that can be
+demonstrated by lighting something is solid combustibles — and the most
+important instruction the system gives, *isolate the gas supply before putting
+the flame out*, belongs to a class nobody can show.
+
+Only the scene and the detector evidence are canned. Everything downstream runs
+for real: `alert-service` opens an incident, generates the escape route, stores
+the fuel verdict through the ordinary tier 3 path, and passes the scene through
+the same grounding check a camera-fed report goes through. The claim grades on
+screen were computed for that run, so a scenario whose evidence disagreed with
+its own description would have claims withheld during the demonstration. The
+panel is marked **simulated** and so is the API payload, and the simulation
+cannot raise or silence the live alarm — it writes to its own panel only.
+
 **The two fuel classification models**, both held by
 `fire-classification-service`:
 
@@ -225,6 +242,11 @@ curl -sk https://localhost/api/classify/health  # fuel classifier
 # send a test alarm without lighting anything
 curl -X POST localhost:8090/api/test-alert -H 'content-type: application/json' \
      -d '{"zoneId":"kitchen"}'
+
+# run a full simulated fire: incident, route, fuel verdict and graded report
+curl -X POST localhost:8090/api/simulate -H 'content-type: application/json' \
+     -d '{"fuel":"gas","zoneId":"kitchen"}'
+curl -s localhost:8090/api/simulate/scenarios   # what can be simulated
 ```
 
 ```powershell
@@ -237,6 +259,10 @@ curl.exe -sk https://localhost/api/classify/health  # fuel classifier
 # send a test alarm without lighting anything
 Invoke-RestMethod -Method Post -Uri http://localhost:8090/api/test-alert `
   -ContentType application/json -Body '{"zoneId":"kitchen"}'
+
+# run a full simulated fire: incident, route, fuel verdict and graded report
+Invoke-RestMethod -Method Post -Uri http://localhost:8090/api/simulate `
+  -ContentType application/json -Body '{"fuel":"gas","zoneId":"kitchen"}'
 ```
 
 `Invoke-RestMethod` is used for the POST because PowerShell removes the quotation
@@ -251,6 +277,7 @@ cd alert-service
 python3 -m pytest test_routing.py -q   # the escape route scenarios
 python3 -m pytest test_report.py -q    # the check applied before a report is released
 python3 -m pytest test_api.py -q       # every endpoint, over HTTP
+python3 -m pytest test_simulate.py -q  # the simulated fires and their grading
 ```
 
 ```powershell
@@ -259,6 +286,7 @@ cd alert-service
 python -m pytest test_routing.py -q    # the escape route scenarios
 python -m pytest test_report.py -q     # the check applied before a report is released
 python -m pytest test_api.py -q        # every endpoint, over HTTP
+python -m pytest test_simulate.py -q   # the simulated fires and their grading
 ```
 
 ## 5. Scope and design decisions
@@ -277,7 +305,14 @@ results.
 - **Simulation made all four fuel classes testable.** Gas and liquid fuel fires
   cannot be created safely in a house, so an experimental dataset could only have
   covered solid combustibles. CFAST, developed by NIST, produced 570 runs across
-  all four classes.
+  all four classes. The same constraint is why the dashboard carries
+  simulated fires: a demonstration limited to what can be lit indoors would show
+  one of the three response paths and never the class C one.
+- **A simulated fire is graded, not scripted.** The canned scenarios supply the
+  scene and the detector evidence only. Nothing about the report is pre-written
+  and nothing is pre-approved, so a scenario whose numbers did not agree with
+  each other would fail its own grounding check on screen. A demonstration that
+  cannot fail would show nothing about the control it claims to demonstrate.
 - **The models are tested on unfamiliar fires too.** Ninety runs use fuels and
   room sizes outside the training ranges, which checks whether the model
   recognises a fire unlike anything it has seen.

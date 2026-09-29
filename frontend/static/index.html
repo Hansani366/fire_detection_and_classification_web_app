@@ -186,6 +186,105 @@
 .fuel-pending { font-size: 13px; color: var(--ink3); }
 
 /* ═══════════════════════════════════════════════════════════
+   SIMULATED FIRES
+
+   Two of the three fuel classes cannot be lit in a room with people in
+   it, so the response path for a gas fire — the one whose first
+   instruction is "isolate the supply", the single most important line
+   the system produces — could never be shown. These controls run the
+   canned scenarios alert-service holds for exactly that reason.
+
+   STYLED SO IT CANNOT BE MISTAKEN FOR A REAL ALARM. Dashed border,
+   muted surface and a standing "SIMULATED" badge on every panel it
+   produces. A screenshot of this in a write-up has to say what it is
+   without a caption, because the caption is the first thing that gets
+   lost.
+═══════════════════════════════════════════════════════════ */
+.sim-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px dashed var(--outline);
+}
+.sim-label {
+  font-family: var(--display); font-weight: 700; font-size: 0.68rem;
+  letter-spacing: 0.6px; text-transform: uppercase; color: var(--ink3);
+}
+.sim-btn {
+  min-height: 0; padding: 7px 14px;
+  font-family: var(--display); font-size: 0.74rem; font-weight: 700;
+  border-radius: 100px;
+  background: var(--card); color: var(--ink2);
+  border: 1.5px dashed var(--outline);
+}
+.sim-btn:hover:not(:disabled) { color: var(--ink); border-color: var(--ink3); }
+.sim-btn:disabled { opacity: .5; cursor: default; }
+.sim-note { font-size: 11.5px; color: var(--ink3); flex-basis: 100%; }
+
+.sim-card {
+  background: var(--card); border: 1.5px dashed var(--outline);
+  border-radius: 14px; padding: 16px 18px; margin-bottom: 18px;
+  box-shadow: var(--shadow-card);
+}
+.sim-card[hidden] { display: none; }
+.sim-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.sim-title { font-family: var(--display); font-size: 17px; font-weight: 800; }
+.sim-badge {
+  font-family: var(--display); font-size: 10px; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase;
+  background: var(--neutral-bg); color: var(--ink2);
+  padding: 3px 7px; border-radius: 5px;
+}
+.sim-id { margin-left: auto; font-family: var(--display); font-size: 11.5px; color: var(--ink3); }
+.sim-sub { font-size: 12.5px; color: var(--ink3); margin-bottom: 14px; }
+
+.sim-sec { margin-top: 14px; }
+.sim-sec h4 {
+  font-family: var(--display); font-size: 0.68rem; font-weight: 700;
+  letter-spacing: 1px; text-transform: uppercase; color: var(--ink3);
+  margin-bottom: 8px;
+}
+.sim-claim {
+  display: flex; align-items: baseline; gap: 9px;
+  padding: 7px 0; border-bottom: 1px solid var(--line);
+  font-size: 13px; line-height: 1.5;
+}
+.sim-claim:last-child { border-bottom: 0; }
+.sim-claim .why { display: block; font-size: 11.5px; color: var(--ink3); margin-top: 2px; }
+/* The three grades of Table 3.20, kept visually distinct. A withheld claim is
+   not a smaller version of a supported one — it is the opposite — so it does
+   not get a paler shade of the same colour. */
+.sim-tag {
+  flex-shrink: 0; min-width: 88px; text-align: center;
+  font-family: var(--display); font-size: 10px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase;
+  padding: 3px 7px; border-radius: 5px;
+}
+.sim-tag.supported    { background: var(--safe-bg);   color: var(--safe-ink); }
+.sim-tag.unsupported  { background: var(--warn-bg);   color: var(--warn-ink); }
+.sim-tag.contradicted { background: var(--danger-bg); color: var(--danger-ink); }
+.sim-withheld {
+  margin-top: 10px; font-size: 12px; line-height: 1.55;
+  background: var(--danger-bg); color: var(--danger-ink);
+  border-radius: 9px; padding: 10px 12px;
+}
+.sim-grounding {
+  display: flex; flex-wrap: wrap; gap: 18px;
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);
+}
+.sim-metric { display: flex; flex-direction: column; gap: 2px; }
+.sim-metric b { font-family: var(--display); font-size: 16px; font-weight: 800; }
+.sim-metric span {
+  font-family: var(--display); font-size: 10px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--ink3);
+}
+.sim-foot {
+  margin-top: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  font-size: 12px; color: var(--ink3);
+}
+.sim-foot a { color: var(--brand); font-weight: 600; }
+.sim-err { font-size: 13px; color: var(--danger-ink); }
+
+/* ═══════════════════════════════════════════════════════════
    MAIN GRID
 ═══════════════════════════════════════════════════════════ */
 /* Split view: the detector panes need the full page width to stay legible, so
@@ -915,6 +1014,11 @@ button:disabled {
        fills the room with an explosive cloud. -->
   <div id="fuel-card" class="fuel-card" hidden></div>
 
+  <!-- Where a simulated fire prints its situation report. Hidden until a
+       scenario is run, and never populated by the live detection loop: a real
+       fire's report belongs on /reports with its timeline, not here. -->
+  <div id="sim-report" class="sim-card" hidden></div>
+
   <!-- ── KPI row ── -->
   <div class="kpi-row">
     <div class="kpi">
@@ -1063,6 +1167,18 @@ button:disabled {
         <button id="btn-reset" class="btn-secondary">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reset Alarm
         </button>
+      </div>
+
+      <!-- SIMULATED FIRES. A gas or liquid fuel fire cannot be produced safely
+           indoors, so the only class that can ever be demonstrated by lighting
+           something is solid combustibles. These run the same path a real
+           detection takes -- incident, route, fuel verdict, graded report -- on
+           evidence alert-service holds for each class. The buttons are built
+           from /api/simulate/scenarios rather than written out here, so adding
+           a fourth means editing one file. -->
+      <div class="sim-row" id="sim-row">
+        <span class="sim-label">Simulate</span>
+        <span class="sim-note">Loading scenarios…</span>
       </div>
 
       <div class="svc-row">
@@ -2271,6 +2387,188 @@ function renderFuelCard() {
     ${(FUEL_GUIDE.universalCautions || []).map(c =>
       `<div class="fuel-caution"><b>${esc(c.title)}:</b> ${esc(c.detail)}</div>`).join('')}`;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   SIMULATED FIRES
+
+   WHY THE DASHBOARD NEEDS THIS AT ALL. Section 5 records that gas and
+   liquid fuel fires cannot be produced safely in a house, which is why
+   the classifier was trained on CFAST simulation rather than on lit
+   fires. The same constraint applies to showing the system working: the
+   only class anyone can demonstrate by lighting something is solid
+   combustibles, and the single most important instruction the system
+   ever gives — isolate the gas supply BEFORE putting the flame out —
+   belongs to the class that can never be shown.
+
+   WHAT IS SIMULATED AND WHAT IS NOT. The scene and the detector
+   evidence are canned; everything downstream is live. alert-service
+   opens a real incident, generates a real escape route, stores a real
+   fuel verdict and runs the scene through the same grounding check a
+   camera-fed report goes through. The claim grades printed below were
+   computed for this run — a scenario whose evidence disagreed with its
+   own description would have claims withheld right here on screen.
+
+   IT DOES NOT TOUCH THE LIVE LADDER. Escalation owns S.fireAlarm and the
+   alarm banner; this writes to its own panel and nothing else. A
+   simulation must never be able to raise or silence the real alarm.
+═══════════════════════════════════════════════════════════ */
+const SIM_CLASS_NOTE = {
+  A: 'EN 2 class A', B: 'EN 2 class B', C: 'EN 2 class C',
+};
+
+/* Resolve the simulated incident immediately. Two reasons, and the second
+   matters more: /api/history lists resolved incidents only, so an unresolved
+   simulation would not reach the reports page for 30 seconds; and an incident
+   left open in this zone makes alert-service treat a genuine detection in the
+   next half-minute as a repeat of the simulation rather than a new fire. */
+const SIM_RESOLVE = true;
+
+async function loadSimScenarios() {
+  const row = $('sim-row');
+  let list;
+  try {
+    list = (await (await fetch('/api/simulate/scenarios')).json()).scenarios || [];
+  } catch (e) {
+    row.querySelector('.sim-note').textContent =
+      'Simulated fires unavailable — alert-service is not reachable.';
+    return;
+  }
+  /* Only the two classes that cannot be lit indoors get a button. Liquid fuel
+     is reachable by name through the API; putting a third button here would
+     make the row read as a menu of fires rather than a workaround for the two
+     that cannot be demonstrated any other way. */
+  const shown = list.filter(sc => sc.name === 'solid' || sc.name === 'gas');
+  row.innerHTML = '<span class="sim-label">Simulate</span>'
+    + shown.map(sc =>
+        `<button type="button" class="sim-btn" data-sim="${esc(sc.name)}"
+                 title="${esc(sc.blurb)}">${esc(sc.label)}</button>`).join('')
+    + '<span class="sim-note">Runs the full response path on stored evidence. '
+    + 'No camera, no alarm — the report appears above and on '
+    + '<a href="/reports">Reports</a>.</span>';
+
+  row.querySelectorAll('.sim-btn').forEach(b =>
+    b.addEventListener('click', () => runSimulation(b.dataset.sim, b)));
+}
+
+async function runSimulation(name, btn) {
+  const card = $('sim-report');
+  const buttons = [...document.querySelectorAll('.sim-btn')];
+  buttons.forEach(b => { b.disabled = true; });
+  btn.textContent = 'Running…';
+  const label = btn.title;
+
+  card.hidden = false;
+  card.innerHTML = '<div class="sim-sub">Opening the incident, routing, '
+                 + 'classifying the fuel and grading the report…</div>';
+  try {
+    const res = await fetch('/api/simulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fuel: name,
+        zoneId: CAMERA_ZONE_ID,
+        /* The head-count the human detector is currently reporting, so the
+           people claim is graded against the number actually on screen. Falls
+           back to a non-zero default when nothing is running, because a
+           simulated fire in an empty room never exercises the muster. */
+        occupancy: S.occNow === null ? 4 : S.occNow,
+        resolve: SIM_RESOLVE,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} — ${(await res.text()).slice(0, 120)}`);
+    const body = await res.json();
+    renderSimReport(body);
+    S.log.push({ ts: nowHMS(), text: `[simulated] ${body.scenario.label} — ${body.incidentId}` });
+    render();
+  } catch (e) {
+    card.innerHTML = `<div class="sim-err">Simulation failed: ${esc(e.message)}</div>`;
+  } finally {
+    buttons.forEach(b => { b.disabled = false; });
+    btn.textContent = label.split(' — ')[0] || btn.dataset.sim;
+    loadSimScenarios();   /* restore the original button labels */
+  }
+}
+
+function renderSimReport(body) {
+  const card = $('sim-report');
+  const rep  = body.report || {};
+  const sr   = rep.situationReport;
+  const cls  = rep.classification || {};
+  const resp = cls.response || {};
+  const route = rep.route;
+
+  const claims = (sr && sr.claims) ? sr.claims : [];
+  const g = (sr && sr.grounding) ? sr.grounding : {};
+  const pct = (v) => (v === null || v === undefined) ? '—' : `${(v * 100).toFixed(0)}%`;
+
+  card.innerHTML = `
+    <div class="sim-head">
+      <span class="sim-title">${esc(body.scenario.label)}</span>
+      <span class="sim-badge">simulated</span>
+      ${resp.fire_class ? `<span class="sim-badge">${esc(SIM_CLASS_NOTE[resp.fire_class]
+                                                        || 'class ' + resp.fire_class)}</span>` : ''}
+      <span class="sim-id">${esc(body.incidentId)}</span>
+    </div>
+    <div class="sim-sub">
+      ${esc(rep.zone ? rep.zone.name : '')} ·
+      ${esc(rep.detection ? rep.detection.description : '')}
+      <br>Sensors at the time: ${esc(body.scenario.sensorSummary)}
+    </div>
+
+    <div class="sim-sec">
+      <h4>Situation report — every claim checked before release</h4>
+      ${claims.length ? claims.map(c => `
+        <div class="sim-claim">
+          <span class="sim-tag ${esc(c.category)}">${esc(c.category)}</span>
+          <span>${esc(c.text)}<span class="why">${esc(c.why)}</span></span>
+        </div>`).join('')
+        : '<div class="sim-sub">No report was produced for this incident.</div>'}
+      ${(sr && sr.withheld && sr.withheld.length) ? `
+        <div class="sim-withheld"><b>Withheld from the released text:</b>
+          ${sr.withheld.map(w => esc(w.text) + ' — ' + esc(w.why)).join('<br>')}</div>` : ''}
+      <div class="sim-grounding">
+        <div class="sim-metric"><b>${g.claims ?? '—'}</b><span>claims</span></div>
+        <div class="sim-metric"><b>${g.supported ?? '—'}</b><span>supported</span></div>
+        <div class="sim-metric"><b>${g.unsupported ?? '—'}</b><span>unsupported</span></div>
+        <div class="sim-metric"><b>${g.contradicted ?? '—'}</b><span>withheld</span></div>
+        <div class="sim-metric"><b>${pct(g.groundingAccuracy)}</b><span>grounding accuracy</span></div>
+        <div class="sim-metric"><b>${pct(g.hallucinationRate)}</b><span>hallucination rate</span></div>
+      </div>
+    </div>
+
+    ${resp.label ? `
+    <div class="sim-sec">
+      <h4>Response — ${esc(cls.label)}${cls.confidence == null ? ''
+          : ` · ${(cls.confidence * 100).toFixed(0)}% confidence`}</h4>
+      <div class="fuel-first">
+        <b>First: ${esc(resp.first_action)}</b>
+        <p>${esc(resp.first_action_why)}</p>
+      </div>
+      <div class="fuel-cols">
+        <div class="fuel-col use"><h4>Use</h4>
+          <ul>${resp.use.map(u => `<li><b>${esc(u.agent)}</b><span>${esc(u.note)}</span></li>`).join('')}</ul>
+        </div>
+        <div class="fuel-col avoid"><h4>Do not use</h4>
+          <ul>${resp.do_not_use.map(d => `<li><b>${esc(d.agent)}</b><span>${esc(d.why)}</span></li>`).join('')}</ul>
+        </div>
+      </div>
+      ${resp.caution ? `<div class="fuel-caution"><b>Note:</b> ${esc(resp.caution)}</div>` : ''}
+    </div>` : ''}
+
+    <div class="sim-foot">
+      <span>Escape route: ${route
+        ? esc(route.status) + (route.exitName ? ' via ' + esc(route.exitName) : '')
+          + (route.lengthM != null ? ` · ${route.lengthM} m` : '')
+        : esc(rep.routeError || 'not generated')}</span>
+      <span>·</span>
+      <a href="/reports">Open the full record on Reports</a>
+      <span>·</span>
+      <span>The fuel verdict comes from models trained on simulation, not on
+            recorded fire. It is an estimate, not a finding.</span>
+    </div>`;
+}
+
+loadSimScenarios();
 
 Escalation.configure({
   zoneId: CAMERA_ZONE_ID,

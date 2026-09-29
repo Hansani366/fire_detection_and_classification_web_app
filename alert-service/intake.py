@@ -394,3 +394,93 @@ async def auto_clear_watchdog(db) -> None:
         except Exception as exc:  # noqa: BLE001 — keep the loop alive
             log.error("Watchdog tick failed: %s", exc)
         await asyncio.sleep(WATCHDOG_INTERVAL)
+
+
+async def handle_simulation(db, scenario: dict, zone_id: str,
+                            occupancy: int | None = None,
+                            resolve: bool = False) -> dict:
+    """Run one canned fire (scenarios.py) end to end, as a real one would run.
+
+    WHY THIS IS NOT JUST A BIGGER /api/test-alert. That endpoint opens a fire and
+    stops. It never classifies, so `fuel_type` stays NULL, and a NULL fuel type
+    takes the whole response path down with it: `_check_material` cannot grade
+    what is burning, the extinguisher card has nothing to render, and the report
+    ends without the one instruction a responder acts on. A demonstration of the
+    system that omits the response is a demonstration of half of it.
+
+    THE ORDER BELOW IS THE POINT, AND IT IS NOT ARBITRARY:
+
+      1. Open the fire with NO scene attached. Tier 2 is a camera event; it does
+         not know what the fuel is yet, and neither did the real system at that
+         instant.
+      2. Classify it through the ordinary tier 3 path, so the verdict is stored,
+         `classified_at` is stamped, and the phone gets the same classification
+         push a live fire would send.
+      3. Only THEN build the situation report.
+
+    Steps 2 and 3 are in that order because `_attach_report` reads the fuel
+    verdict back off the incident row rather than taking it from the caller. Run
+    the other way round, every simulated report would say the material claim
+    could not be checked -- which is exactly what /api/test-alert produces today,
+    and exactly the claim the grounding check exists to resolve.
+
+    Nothing here is pre-approved. The scene goes through report.build like any
+    other, and a scenario whose evidence disagreed with its own description would
+    have those claims withheld on screen.
+
+    `resolve` closes the incident immediately instead of waiting out
+    CLEAR_AFTER_SECONDS. /api/history lists resolved incidents only, so this is
+    how a simulated fire reaches the reports page without a 30-second pause in
+    the middle of a demonstration.
+    """
+    occupancy = 0 if occupancy is None else max(0, int(occupancy))
+
+    # The head-count travels into the scene as a CLAIM and into the evidence as
+    # a MEASUREMENT, which is what lets _check_people compare them at all. They
+    # are the same number here because a correct detection is being simulated;
+    # set them apart and the report will say the claim was contradicted.
+    scene = dict(scenario["scene"])
+    scene["peopleVisible"] = occupancy > 0
+    scene["peopleCount"] = occupancy
+    evidence = dict(scenario["evidence"])
+    evidence["occupancy"] = occupancy
+
+    opened = await handle_confirmed_fire(
+        db, zone_id, scenario["type"], scenario["confidence"],
+        scenario["description"], None,
+        force=True,                 # a demonstration must not be eaten by the cooldown
+        occupancy=occupancy,
+        severity="fire",
+        verification="confirmed",
+        scene=None,                 # deliberately withheld until after step 2
+        evidence=None,
+    )
+    incident_id = opened.get("incidentId")
+    if not incident_id:
+        # Only reachable if the zone has no incident and none could be opened.
+        return {"incidentId": None, "created": False,
+                "reason": opened.get("reason") or "not_opened"}
+
+    verdict = await handle_classification(
+        db, zone_id, scenario["fuel"], scenario["fuelConfidence"], "model",
+        occupancy=occupancy,
+    )
+
+    await _attach_report(db, incident_id, zone_id, scene, evidence)
+
+    if resolve:
+        await store.resolve_incident(db, incident_id, "auto_cleared")
+        await store.set_zone_status(db, zone_id, "clear")
+        log.info("Simulated incident %s resolved immediately.", incident_id)
+
+    return {
+        "incidentId": incident_id,
+        "created": bool(opened.get("created")),
+        # False when the click landed on a fire that was already burning in this
+        # zone. One fire is one incident -- the same rule that stops a real
+        # flickering detection from opening five.
+        "reusedExistingIncident": not opened.get("created"),
+        "fuelType": scenario["fuel"],
+        "fuelApplied": bool(verdict.get("applied")),
+        "resolved": bool(resolve),
+    }
