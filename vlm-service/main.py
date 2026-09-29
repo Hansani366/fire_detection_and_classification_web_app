@@ -27,11 +27,16 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
     raise RuntimeError("GOOGLE_API_KEY is not set")
 
+# ONE PLACE FOR THE MODEL NAME. /health reports it and the logs quote it, so a
+# name written twice is a name that can disagree with itself after an upgrade.
+# Override with VLM_MODEL in .env to A/B a different model without a rebuild.
+MODEL_NAME = os.getenv("VLM_MODEL", "gemini-3.8-flash")
+
 llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
+    model=MODEL_NAME,
     api_key=GOOGLE_API_KEY,
 )
-logger.info("VLM LLM initialised.")
+logger.info("VLM LLM initialised (model=%s).", MODEL_NAME)
 
 # WHY THE NUISANCE GUARD NAMES CATEGORIES, NOT THE TEST SET. The nuisance
 # battery (Section 3.3.6) uses household stand-ins: a kettle for process steam, a
@@ -209,9 +214,51 @@ def _image_message(prompt: str, image_bytes: bytes) -> HumanMessage:
     ])
 
 
-def _strip_fences(raw: str) -> str:
-    """Drop markdown code fences the model sometimes adds despite the prompt."""
-    raw = raw.strip()
+def _as_text(content) -> str:
+    """Flatten a LangChain message content into plain text.
+
+    WHY THIS EXISTS. Older Gemini models returned `AIMessage.content` as a
+    single string. The thinking-capable 3.x models return a LIST of content
+    blocks instead -- typically one or more reasoning blocks followed by the
+    answer -- so every `.strip()` on `response.content` raised
+    `AttributeError: 'list' object has no attribute 'strip'` and every
+    /describe-image/ call became a 500 even though the API call itself
+    succeeded.
+
+    Reasoning blocks are dropped rather than concatenated: they are prose about
+    the image, so feeding them to `json.loads` would fail even after the fences
+    are stripped.
+    """
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                # Reasoning blocks are marked either by `thought: true` or by a
+                # block type of "thinking"/"reasoning", depending on version.
+                if block.get("thought") is True:
+                    continue
+                if block.get("type") in ("thinking", "reasoning"):
+                    continue
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts)
+
+    return "" if content is None else str(content)
+
+
+def _strip_fences(raw) -> str:
+    """Drop markdown code fences the model sometimes adds despite the prompt.
+
+    Accepts a string or a raw message content, so callers never have to know
+    which shape the current model returns.
+    """
+    raw = _as_text(raw).strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
@@ -263,7 +310,7 @@ class SensorWarningIn(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": "gemini-2.5-flash"}
+    return {"status": "ok", "model": MODEL_NAME}
 
 
 @app.post("/warn-from-sensors/")
@@ -280,7 +327,7 @@ async def warn_from_sensors(body: SensorWarningIn):
     try:
         prompt = SENSOR_WARNING_PROMPT.format(readings=body.readings)
         response = llm.invoke([HumanMessage(content=prompt)])
-        text = _strip_fences(str(response.content)).strip().strip('"')
+        text = _strip_fences(response.content).strip().strip('"')
         if not text:
             raise ValueError("empty response")
         logger.info("Sensor warning generated for zone=%s level=%s", body.zone, body.level)
@@ -342,7 +389,7 @@ async def describe_image(file: UploadFile = File(...),
         # It matters for the record as well: the grounding analysis counts the
         # 'detected' field against ground truth, and a parse failure scored as a
         # genuine negative corrupts that count with no trace anywhere.
-        logger.warning("VLM returned non-JSON response: %s | error: %s", response.content[:200], e)
+        logger.warning("VLM returned non-JSON response: %s | error: %s", _as_text(response.content)[:200], e)
         raise HTTPException(status_code=502, detail="VLM returned unparseable output")
 
     except HTTPException:
@@ -388,7 +435,7 @@ async def describe_image_detailed(file: UploadFile = File(...)):
 
     except json.JSONDecodeError as e:
         logger.warning("VLM detailed returned non-JSON: %s | error: %s",
-                       response.content[:200], e)
+                       _as_text(response.content)[:200], e)
         return {**zeros, "description": "", "parsed": False,
                 "latency_ms": round((time.perf_counter() - started) * 1000)}
 
@@ -479,7 +526,7 @@ async def describe_scene(file: UploadFile = File(...)):
         # report built from an unparseable answer would present the model's
         # silence as a set of null findings.
         logger.warning("VLM scene returned non-JSON: %s | error: %s",
-                       response.content[:200], e)
+                       _as_text(response.content)[:200], e)
         raise HTTPException(status_code=502, detail="VLM returned unparseable output")
 
     except HTTPException:
